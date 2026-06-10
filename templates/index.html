@@ -1,25 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2>台風養生点検システム</h2>
-  <p>台風接近時の現場点検・上司への報告・養生資料の共有を行うためのシステムです。</p>
-  <p class="footer-note">登録報告数: {{ total }} 件 ／ 上司確認待ち: {{ pending }} 件</p>
+  <h2>現場点検システム</h2>
+  <p>工事現場の各種点検記録を作成・共有し、上司への報告を行うためのシステムです。</p>
 </div>
 
 <div class="menu-grid">
-  <a class="menu-card" href="{{ url_for('new_report') }}">
-    <span class="icon">📝</span>
-    <div class="title">点検報告を作成</div>
-    <div class="desc">現場の台風養生点検を行い、報告書を作成します</div>
+  {% for key, info in types.items() %}
+  <a class="menu-card" href="{{ url_for('reports_list', category=key) }}">
+    {% if counts[key] > 0 %}
+    <span class="badge badge-pending pending-badge">確認待ち {{ counts[key] }}</span>
+    {% endif %}
+    <span class="icon">{{ info.icon }}</span>
+    <div class="title">{{ info.label }}</div>
+    <div class="desc">{{ info.desc }}</div>
   </a>
-  <a class="menu-card" href="{{ url_for('reports_list') }}">
-    <span class="icon">📋</span>
-    <div class="title">報告書一覧・上司確認</div>
-    <div class="desc">提出済みの点検報告を確認・承認します</div>
-  </a>
+  {% endfor %}
   <a class="menu-card" href="{{ url_for('resources_list') }}">
     <span class="icon">📚</span>
-    <div class="title">台風養生 資料集</div>
+    <div class="title">資料集</div>
     <div class="desc">養生の参考例や手順書などの資料を共有します</div>
   </a>
 </div>

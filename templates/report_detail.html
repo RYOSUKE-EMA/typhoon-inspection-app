@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2>点検報告書 詳細</h2>
+  <h2>{{ info.icon }} {{ info.label }} 詳細</h2>
   <table style="margin-bottom:20px;">
     <tr><th style="width:160px;">工事名</th><td>{{ report.project_name }}</td></tr>
     <tr><th>工事ナンバー</th><td>{{ report.project_no }}</td></tr>
@@ -43,7 +43,7 @@
       <tr><th>コメント</th><td>{{ report.approver_comment or "" }}</td></tr>
     </table>
   {% else %}
-    <form method="post" action="{{ url_for('approve_report', report_id=report.id) }}">
+    <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}">
       <div class="form-row">
         <label>確認者名</label>
         <input type="text" name="approver_name" required>
@@ -57,5 +57,5 @@
   {% endif %}
 </div>
 
-<a href="{{ url_for('reports_list') }}" class="btn btn-secondary">一覧に戻る</a>
+<a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">一覧に戻る</a>
 {% endblock %}
