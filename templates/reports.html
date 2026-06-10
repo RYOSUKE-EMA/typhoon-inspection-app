@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>点検報告書 一覧</h2>
+  {% if reports %}
+  <table>
+    <thead>
+      <tr>
+        <th>点検日時</th>
+        <th>工事名</th>
+        <th>工事ナンバー</th>
+        <th>点検者</th>
+        <th>状態</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in reports %}
+      <tr>
+        <td>{{ r.inspect_datetime | replace("T", " ") }}</td>
+        <td>{{ r.project_name }}</td>
+        <td>{{ r.project_no }}</td>
+        <td>{{ r.inspector }}</td>
+        <td>
+          {% if r.status == '確認済' %}
+          <span class="badge badge-done">確認済</span>
+          {% else %}
+          <span class="badge badge-pending">確認待ち</span>
+          {% endif %}
+        </td>
+        <td><a class="btn btn-primary btn-sm" href="{{ url_for('report_detail', report_id=r.id) }}">詳細</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>まだ報告書がありません。</p>
+  {% endif %}
+</div>
+{% endblock %}

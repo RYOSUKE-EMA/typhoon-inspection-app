@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>台風養生 点検報告（新規作成）</h2>
+  <form method="post">
+    <div class="flex">
+      <div class="form-row" style="flex:2; min-width:220px;">
+        <label>工事名</label>
+        <input type="text" name="project_name" required>
+      </div>
+      <div class="form-row" style="flex:1; min-width:160px;">
+        <label>工事ナンバー</label>
+        <input type="text" name="project_no">
+      </div>
+    </div>
+    <div class="flex">
+      <div class="form-row" style="flex:1; min-width:220px;">
+        <label>点検日時</label>
+        <input type="datetime-local" name="inspect_datetime" value="{{ now }}" required>
+      </div>
+      <div class="form-row" style="flex:1; min-width:160px;">
+        <label>点検者</label>
+        <input type="text" name="inspector" required>
+      </div>
+    </div>
+
+    <h2 style="margin-top:24px;">点検項目</h2>
+    <table class="item-table">
+      <thead>
+        <tr><th style="width:40px;">No</th><th>点検項目</th><th style="width:130px;">点検結果</th><th>備考</th></tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td class="no">{{ loop.index }}</td>
+          <td>{{ item }}</td>
+          <td>
+            <select name="result_{{ loop.index0 }}">
+              {% for opt in options %}
+              <option value="{{ opt }}">{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><input type="text" name="note_{{ loop.index0 }}" placeholder="必要に応じて記入"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="flex" style="margin-top:20px;">
+      <button type="submit" class="btn btn-primary">報告書を提出</button>
+      <a href="{{ url_for('index') }}" class="btn btn-secondary">キャンセル</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

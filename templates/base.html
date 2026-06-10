@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>台風養生点検システム</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Meiryo", "メイリオ", sans-serif; background: #f0f4f8; color: #333; }
+  header { background: #c0392b; color: white; padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 1.2rem; }
+  header a { color: #f5d5d0; text-decoration: none; font-size: 0.9rem; }
+  header a:hover { color: white; }
+  .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+  .card { background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
+  h2 { color: #c0392b; font-size: 1.1rem; margin-bottom: 16px; border-bottom: 2px solid #c0392b; padding-bottom: 8px; }
+  .btn { display: inline-block; padding: 8px 18px; border-radius: 5px; border: none; cursor: pointer; font-size: 0.9rem; text-decoration: none; }
+  .btn-primary { background: #c0392b; color: white; }
+  .btn-primary:hover { background: #a3291d; }
+  .btn-success { background: #1e8449; color: white; }
+  .btn-success:hover { background: #196f3d; }
+  .btn-secondary { background: #7f8c8d; color: white; }
+  .btn-secondary:hover { background: #626567; }
+  .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+  input[type=text], input[type=datetime-local], textarea, select {
+    border: 1px solid #ccc; border-radius: 4px; padding: 6px 10px; font-size: 0.9rem; width: 100%;
+  }
+  input[type=file] { font-size: 0.9rem; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: #c0392b; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th { background: #c0392b; color: white; padding: 8px 6px; text-align: center; }
+  td { padding: 8px 6px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+  tr:hover td { background: #fdf0ee; }
+  .flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .alert { padding: 10px 14px; border-radius: 5px; margin-bottom: 14px; }
+  .alert-info { background: #fdebd0; border-left: 4px solid #c0392b; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; color: white; }
+  .badge-pending { background: #d35400; }
+  .badge-done { background: #1e8449; }
+  .menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .menu-card { display: block; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 28px 20px; text-align: center; text-decoration: none; color: #333; transition: transform 0.1s; }
+  .menu-card:hover { transform: translateY(-3px); box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
+  .menu-card .icon { font-size: 2.4rem; display: block; margin-bottom: 10px; }
+  .menu-card .title { font-size: 1.05rem; font-weight: bold; color: #c0392b; }
+  .menu-card .desc { font-size: 0.85rem; color: #666; margin-top: 6px; }
+  label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 4px; }
+  .form-row { margin-bottom: 14px; }
+  .item-table th, .item-table td { text-align: left; }
+  .item-table td.no { text-align: center; width: 40px; color: #888; }
+  .item-table select { width: auto; min-width: 110px; }
+  .footer-note { font-size: 0.8rem; color: #888; margin-top: 8px; }
+</style>
+{% block extra_style %}{% endblock %}
+</head>
+<body>
+<header>
+  <h1>🌀 台風養生点検システム</h1>
+  <a href="{{ url_for('index') }}">トップ</a>
+  <a href="{{ url_for('new_report') }}">点検報告作成</a>
+  <a href="{{ url_for('reports_list') }}">報告書一覧</a>
+  <a href="{{ url_for('resources_list') }}">資料集</a>
+</header>
+<div class="container">
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

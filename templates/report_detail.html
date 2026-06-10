@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>点検報告書 詳細</h2>
+  <table style="margin-bottom:20px;">
+    <tr><th style="width:160px;">工事名</th><td>{{ report.project_name }}</td></tr>
+    <tr><th>工事ナンバー</th><td>{{ report.project_no }}</td></tr>
+    <tr><th>点検日時</th><td>{{ report.inspect_datetime | replace("T", " ") }}</td></tr>
+    <tr><th>点検者</th><td>{{ report.inspector }}</td></tr>
+    <tr><th>状態</th><td>
+      {% if report.status == '確認済' %}
+      <span class="badge badge-done">確認済</span>
+      {% else %}
+      <span class="badge badge-pending">確認待ち</span>
+      {% endif %}
+    </td></tr>
+  </table>
+
+  <h2>点検項目</h2>
+  <table class="item-table">
+    <thead>
+      <tr><th style="width:40px;">No</th><th>点検項目</th><th style="width:110px;">点検結果</th><th>備考</th></tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td class="no">{{ loop.index }}</td>
+        <td>{{ item.item_name }}</td>
+        <td>{{ item.result }}</td>
+        <td>{{ item.note }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>上司確認欄</h2>
+  {% if report.status == '確認済' %}
+    <table>
+      <tr><th style="width:160px;">確認者</th><td>{{ report.approver_name }}</td></tr>
+      <tr><th>確認日時</th><td>{{ report.approved_at | replace("T", " ") }}</td></tr>
+      <tr><th>コメント</th><td>{{ report.approver_comment or "" }}</td></tr>
+    </table>
+  {% else %}
+    <form method="post" action="{{ url_for('approve_report', report_id=report.id) }}">
+      <div class="form-row">
+        <label>確認者名</label>
+        <input type="text" name="approver_name" required>
+      </div>
+      <div class="form-row">
+        <label>コメント（任意）</label>
+        <textarea name="approver_comment" rows="3"></textarea>
+      </div>
+      <button type="submit" class="btn btn-success">確認済みにする</button>
+    </form>
+  {% endif %}
+</div>
+
+<a href="{{ url_for('reports_list') }}" class="btn btn-secondary">一覧に戻る</a>
+{% endblock %}
