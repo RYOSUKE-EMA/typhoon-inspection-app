@@ -12,10 +12,10 @@
       {% for group in groups %}
       <details class="card" style="margin-bottom:10px;" {% if loop.first %}open{% endif %}>
         <summary style="cursor:pointer; font-weight:bold; font-size:1.05rem;">📁 {{ group.label }}（{{ group.reports|length }}件）</summary>
-        <table style="margin-top:10px;">
+        <table class="list-table" style="margin-top:10px;">
           <thead>
             <tr>
-              <th>工事ナンバー</th>
+              <th class="col-no">工事ナンバー</th>
               <th>工事名</th>
               <th>点検者</th>
               <th>点検日</th>
@@ -48,10 +48,10 @@
     <p>まだ報告書がありません。</p>
     {% endif %}
   {% elif reports %}
-  <table>
+  <table class="list-table">
     <thead>
       <tr>
-        <th>工事ナンバー</th>
+        <th class="col-no">工事ナンバー</th>
         <th>工事名</th>
         {% if info.subtypes %}<th>足場の種類</th>{% endif %}
         <th>点検者</th>
