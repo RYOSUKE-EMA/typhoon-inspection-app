@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2>{{ info.icon }} {{ info.label }}（新規作成）</h2>
+  <h2>{{ info.icon }} {{ info.label }}{% if subtype_label %}（{{ subtype_label }}）{% endif %}（新規作成）</h2>
   <form method="post">
+    {% if subtype %}<input type="hidden" name="subtype" value="{{ subtype }}">{% endif %}
     <div class="flex">
       <div class="form-row" style="flex:2; min-width:220px;">
         <label>工事名</label>
@@ -30,7 +31,7 @@
         <tr><th style="width:40px;">No</th><th>点検項目</th><th style="width:130px;">点検結果</th><th>備考</th></tr>
       </thead>
       <tbody>
-        {% for item in info.checklist %}
+        {% for item in checklist %}
         <tr>
           <td class="no">{{ loop.index }}</td>
           <td>{{ item }}</td>

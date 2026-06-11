@@ -5,6 +5,9 @@
   <table style="margin-bottom:20px;">
     <tr><th style="width:160px;">工事名</th><td>{{ report.project_name }}</td></tr>
     <tr><th>工事ナンバー</th><td>{{ report.project_no }}</td></tr>
+    {% if info.subtypes %}
+    <tr><th>足場の種類</th><td>{{ info.subtypes[report.subtype].label if report.subtype and report.subtype in info.subtypes else "" }}</td></tr>
+    {% endif %}
     <tr><th>点検日時</th><td>{{ report.inspect_datetime | replace("T", " ") }}</td></tr>
     <tr><th>点検者</th><td>{{ report.inspector }}</td></tr>
     <tr><th>状態</th><td>

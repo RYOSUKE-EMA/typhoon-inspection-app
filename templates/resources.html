@@ -1,16 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2>台風養生 資料集</h2>
-  <p class="footer-note">台風養生の参考例・手順書・チェックリストなどを共有できます。</p>
+  <h2>{{ info.icon }} {{ info.label }} 資料集</h2>
+  <p class="footer-note">{{ info.label }}に関する参考例・手順書・チェックリストなどを共有できます。</p>
   {% if resources %}
   <table style="margin-top:14px;">
     <thead>
-      <tr><th>タイトル</th><th>説明</th><th>登録者</th><th>登録日時</th><th></th><th></th></tr>
+      <tr><th>プレビュー</th><th>タイトル</th><th>説明</th><th>登録者</th><th>登録日時</th><th></th><th></th></tr>
     </thead>
     <tbody>
       {% for r in resources %}
       <tr>
+        <td>
+          {% if r.mimetype and r.mimetype.startswith('image/') %}
+          <a href="{{ url_for('download_resource', resource_id=r.id) }}" target="_blank">
+            <img src="{{ url_for('download_resource', resource_id=r.id) }}" alt="{{ r.title }}" style="max-width:80px; max-height:80px; border-radius:4px;">
+          </a>
+          {% else %}
+          -
+          {% endif %}
+        </td>
         <td>{{ r.title }}</td>
         <td>{{ r.description or "" }}</td>
         <td>{{ r.uploaded_by or "" }}</td>
@@ -32,7 +41,7 @@
 
 <div class="card">
   <h2>資料を追加</h2>
-  <form method="post" action="{{ url_for('upload_resource') }}" enctype="multipart/form-data">
+  <form method="post" action="{{ url_for('upload_resource', category=category) }}" enctype="multipart/form-data">
     <div class="form-row">
       <label>タイトル</label>
       <input type="text" name="title" required>
@@ -51,5 +60,9 @@
     </div>
     <button type="submit" class="btn btn-primary">登録</button>
   </form>
+</div>
+
+<div class="flex">
+  <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}">一覧に戻る</a>
 </div>
 {% endblock %}
