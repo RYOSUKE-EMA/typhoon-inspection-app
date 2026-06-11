@@ -6,15 +6,130 @@ from flask import Flask, render_template, request, redirect, url_for, send_file,
 from io import BytesIO
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.pdfgen import canvas
+from pypdf import PdfReader, PdfWriter
 
 pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
 pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
+
+# ── 安全・環境旬報：公式テンプレートPDFへの重ね書き ──
+SAFETY_PATROL_TEMPLATE = os.path.join(os.path.dirname(__file__), "pdf_templates", "safety_patrol.pdf")
+SAFETY_PATROL_PAGE_W = 595.2
+SAFETY_PATROL_PAGE_H = 841.68
+
+_SAFETY_PATROL_LEFT_BOTTOMS = [
+    135.0, 152.6, 166.1, 187.6, 205.1, 218.7, 236.2, 253.7, 275.2, 288.8,
+    306.3, 345.3, 358.9, 376.4, 393.9, 411.4, 429.0, 446.5, 464.0, 481.5,
+    499.1, 516.6, 534.2, 551.7, 569.3,
+]
+_SAFETY_PATROL_RIGHT_BOTTOMS = [
+    131.2, 148.7, 166.2, 183.6, 201.2, 218.7, 236.3, 253.7, 271.2, 288.8,
+    306.3, 323.8, 341.4, 358.9, 376.4, 402.8, 429.0, 446.6, 464.1, 481.7,
+    499.1, 516.6, 534.1, 551.7, 569.1, 586.7, 604.2, 621.7, 639.4, 656.8,
+    674.3, 691.9, 709.3, 726.8, 744.5,
+]
+SAFETY_PATROL_RESULT_POS = (
+    [(255.1, b) for b in _SAFETY_PATROL_LEFT_BOTTOMS]
+    + [(486.05, b) for b in _SAFETY_PATROL_RIGHT_BOTTOMS]
+)
+
+
+def build_safety_patrol_pdf(report, items):
+    page_w, page_h = SAFETY_PATROL_PAGE_W, SAFETY_PATROL_PAGE_H
+
+    def y(fitz_y):
+        return page_h - fitz_y
+
+    overlay_buf = BytesIO()
+    c = canvas.Canvas(overlay_buf, pagesize=(page_w, page_h))
+
+    # ヘッダー：工事NO・工事名・作業所長・点検記入者
+    c.setFont("HeiseiKakuGo-W5", 9)
+    c.drawString(80, y(101.5), report["project_no"] or "")
+    c.drawString(172, y(101.5), report["project_name"] or "")
+    c.drawString(348, y(101.5), report["site_manager"] or "")
+    c.drawString(438, y(101.5), report["inspector"] or "")
+
+    # タイトル：◯月◯旬 安全・環境旬報（印字済みテキストを白塗りして書き直す）
+    c.setFillColorRGB(1, 1, 1)
+    c.rect(76, y(81.6), 124, 9.6, fill=1, stroke=0)
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("HeiseiKakuGo-W5", 11)
+    if report["report_month"]:
+        title = f"{report['report_month']}月　{report['report_period']}　安全・環境旬報"
+    else:
+        title = "安全・環境旬報"
+    c.drawString(79, y(81.0), title)
+
+    # 右上：提出月日（印字済みテキストを白塗りして書き直す）
+    c.setFillColorRGB(1, 1, 1)
+    c.rect(390, y(81.3), 70, 7.5, fill=1, stroke=0)
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("HeiseiKakuGo-W5", 9)
+    try:
+        submitted = datetime.fromisoformat(report["created_at"])
+        c.drawString(393, y(81.0), f"{submitted.month}月{submitted.day}日提出")
+    except (ValueError, TypeError):
+        pass
+
+    # 点検結果（旬報欄）
+    c.setFont("HeiseiKakuGo-W5", 9)
+    for i, item in enumerate(items[:60]):
+        if i >= len(SAFETY_PATROL_RESULT_POS):
+            break
+        x, by = SAFETY_PATROL_RESULT_POS[i]
+        c.drawCentredString(x, y(by) + 1, item["result"] or "")
+
+    # 災害防止協議会及び教育：実施日（月日）
+    if report["meeting_date"]:
+        try:
+            mdate = datetime.fromisoformat(report["meeting_date"])
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(186, y(586.6), 13, 6, fill=1, stroke=0)
+            c.rect(205, y(586.6), 14, 6, fill=1, stroke=0)
+            c.setFillColorRGB(0, 0, 0)
+            c.setFont("HeiseiMin-W3", 8)
+            c.drawRightString(199, y(585.5), str(mdate.month))
+            c.drawRightString(218.5, y(585.5), str(mdate.day))
+        except ValueError:
+            pass
+
+    # 参加業者名
+    c.setFont("HeiseiMin-W3", 8)
+    c.drawString(85, y(594.5), report["meeting_attendees"] or "")
+
+    # 協議事項・管理重点事項（折り返し表示）
+    notes = report["meeting_notes"] or ""
+    c.setFont("HeiseiMin-W3", 7.5)
+    line_height = 9.5
+    max_chars = 21
+    cur_y = y(656.5)
+    for i in range(0, len(notes), max_chars):
+        if cur_y < y(750):
+            break
+        c.drawString(123, cur_y, notes[i:i + max_chars])
+        cur_y -= line_height
+
+    c.save()
+    overlay_buf.seek(0)
+
+    template_reader = PdfReader(SAFETY_PATROL_TEMPLATE)
+    template_page = template_reader.pages[0]
+    overlay_reader = PdfReader(overlay_buf)
+    template_page.merge_page(overlay_reader.pages[0])
+
+    writer = PdfWriter()
+    writer.add_page(template_page)
+    out_buf = BytesIO()
+    writer.write(out_buf)
+    out_buf.seek(0)
+    return out_buf
 
 # ── DB設定（環境変数 DATABASE_URL があればPostgreSQL、なければSQLite） ──
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -908,11 +1023,19 @@ def report_pdf(category, report_id):
     finally:
         conn.close()
 
+    if category == "safety_patrol":
+        buf = build_safety_patrol_pdf(report, items)
+        filename = f"{info['label']}_{report['project_name']}_{report_id}.pdf"
+        return send_file(
+            buf,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+
     styles = getSampleStyleSheet()
     base_style = ParagraphStyle("jp", parent=styles["Normal"], fontName="HeiseiMin-W3", fontSize=9, leading=12)
     small_style = ParagraphStyle("jpSmall", parent=styles["Normal"], fontName="HeiseiMin-W3", fontSize=7.5, leading=10)
-    patrol_style = ParagraphStyle("jpPatrol", parent=styles["Normal"], fontName="HeiseiMin-W3", fontSize=6, leading=7.2)
-    patrol_group_style = ParagraphStyle("jpPatrolGroup", parent=styles["Normal"], fontName="HeiseiKakuGo-W5", fontSize=6, leading=7.2, alignment=1)
     title_style = ParagraphStyle("jpTitle", parent=styles["Heading1"], fontName="HeiseiKakuGo-W5", fontSize=16, leading=20)
     head_style = ParagraphStyle("jpHead", parent=styles["Heading2"], fontName="HeiseiKakuGo-W5", fontSize=11, leading=14)
 
@@ -922,7 +1045,7 @@ def report_pdf(category, report_id):
         if subtype_info:
             subtype_label = subtype_info["label"]
 
-    pagesize = landscape(A4) if category == "safety_patrol" else A4
+    pagesize = A4
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -936,60 +1059,31 @@ def report_pdf(category, report_id):
 
     elements = []
 
-    if category == "safety_patrol":
-        period_label = f"{report['report_month']}月　{report['report_period']}" if report["report_month"] else ""
-        title_text = f"{period_label}　{info['label']}" if period_label else info['label']
-        try:
-            submitted = datetime.fromisoformat(report["created_at"])
-            submitted_label = f"{submitted.month}月{submitted.day}日提出"
-        except (ValueError, TypeError):
-            submitted_label = ""
-        elements.append(Paragraph(title_text, title_style))
-        elements.append(Spacer(1, 6))
+    elements.append(Paragraph(f"{info['icon']} {info['label']}", title_style))
+    elements.append(Spacer(1, 6))
 
-        status_label = "確認済" if report["status"] == "確認済" else "確認待ち"
-        info_rows = [
-            ["工事NO", Paragraph(report["project_no"] or "", base_style), "工事名", Paragraph(report["project_name"] or "", base_style)],
-            ["作業所長", Paragraph(report["site_manager"] or "", base_style), "点検記入者", Paragraph(report["inspector"] or "", base_style)],
-            ["提出日", Paragraph(submitted_label, base_style), "状態", Paragraph(status_label, base_style)],
-        ]
-        info_table = Table(info_rows, colWidths=[label_w, value_w, label_w, value_w])
-        info_table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
-            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        elements.append(info_table)
-        elements.append(Spacer(1, 10))
+    status_label = "確認済" if report["status"] == "確認済" else "確認待ち"
+    info_rows = [
+        ["工事名", Paragraph(report["project_name"] or "", base_style), "工事ナンバー", Paragraph(report["project_no"] or "", base_style)],
+        ["点検日時", Paragraph((report["inspect_datetime"] or "").replace("T", " "), base_style), "点検者", Paragraph(report["inspector"] or "", base_style)],
+    ]
+    if subtype_label:
+        info_rows.append(["足場の種類", Paragraph(subtype_label, base_style), "状態", Paragraph(status_label, base_style)])
     else:
-        elements.append(Paragraph(f"{info['icon']} {info['label']}", title_style))
-        elements.append(Spacer(1, 6))
-
-        status_label = "確認済" if report["status"] == "確認済" else "確認待ち"
-        info_rows = [
-            ["工事名", Paragraph(report["project_name"] or "", base_style), "工事ナンバー", Paragraph(report["project_no"] or "", base_style)],
-            ["点検日時", Paragraph((report["inspect_datetime"] or "").replace("T", " "), base_style), "点検者", Paragraph(report["inspector"] or "", base_style)],
-        ]
-        if subtype_label:
-            info_rows.append(["足場の種類", Paragraph(subtype_label, base_style), "状態", Paragraph(status_label, base_style)])
-        else:
-            info_rows.append(["状態", Paragraph(status_label, base_style), "", ""])
-        info_table = Table(info_rows, colWidths=[label_w, value_w, label_w, value_w])
-        info_table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
-            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        if not subtype_label:
-            info_table.setStyle(TableStyle([("SPAN", (1, 2), (3, 2))]))
-        elements.append(info_table)
-        elements.append(Spacer(1, 10))
+        info_rows.append(["状態", Paragraph(status_label, base_style), "", ""])
+    info_table = Table(info_rows, colWidths=[label_w, value_w, label_w, value_w])
+    info_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
+        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    if not subtype_label:
+        info_table.setStyle(TableStyle([("SPAN", (1, 2), (3, 2))]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 10))
 
     elements.append(Paragraph("点検項目", head_style))
     elements.append(Spacer(1, 4))
@@ -1040,95 +1134,6 @@ def report_pdf(category, report_id):
         ]))
         elements.append(item_table)
 
-    elif category == "safety_patrol":
-        # 安全・環境旬報形式：区分列＋30項目ずつ2列に並べる
-        SAFETY_PATROL_GROUPS = [
-            (1, 6, "A 第三者災害防止対策"),
-            (7, 14, "B 掲示物・管理体制"),
-            (15, 17, "C 火災"),
-            (18, 25, "D 墜落・落下防止対策"),
-            (26, 31, "E 電気工具"),
-            (32, 39, "重機・リフト"),
-            (40, 49, "F・G 仮設"),
-            (50, 51, "H 型枠"),
-            (52, 54, "環境"),
-            (55, 60, "その他"),
-        ]
-
-        def group_label(n):
-            for start, end, label in SAFETY_PATROL_GROUPS:
-                if start <= n <= end:
-                    return label
-            return ""
-
-        half = (len(items) + 1) // 2
-        left_items = items[:half]
-        right_items = items[half:]
-        table_data = [["区分", "No", "点検項目", "旬報", "備考", "区分", "No", "点検項目", "旬報", "備考"]]
-        span_styles = []
-        left_group_start = None
-        left_last_group = None
-        right_group_start = None
-        right_last_group = None
-        for i in range(half):
-            row = []
-            if i < len(left_items):
-                item = left_items[i]
-                g = group_label(i + 1)
-                if g != left_last_group:
-                    if left_last_group is not None and i - left_group_start > 1:
-                        span_styles.append(("SPAN", (0, left_group_start + 1), (0, i)))
-                    left_group_start = i
-                    left_last_group = g
-                    group_cell = Paragraph(g, patrol_group_style)
-                else:
-                    group_cell = ""
-                row += [group_cell, str(i + 1), Paragraph(item["item_name"] or "", patrol_style), item["result"] or "", Paragraph(item["note"] or "", patrol_style)]
-            else:
-                row += ["", "", "", "", ""]
-            j = half + i
-            if i < len(right_items):
-                item = right_items[i]
-                g = group_label(j + 1)
-                if g != right_last_group:
-                    if right_last_group is not None and i - right_group_start > 1:
-                        span_styles.append(("SPAN", (5, right_group_start + 1), (5, i)))
-                    right_group_start = i
-                    right_last_group = g
-                    group_cell = Paragraph(g, patrol_group_style)
-                else:
-                    group_cell = ""
-                row += [group_cell, str(j + 1), Paragraph(item["item_name"] or "", patrol_style), item["result"] or "", Paragraph(item["note"] or "", patrol_style)]
-            else:
-                row += ["", "", "", "", ""]
-            table_data.append(row)
-
-        if left_last_group is not None and half - left_group_start > 1:
-            span_styles.append(("SPAN", (0, left_group_start + 1), (0, half)))
-        if right_last_group is not None and half - right_group_start > 1:
-            span_styles.append(("SPAN", (5, right_group_start + 1), (5, half)))
-
-        col = [14 * mm, 6 * mm, 86 * mm, 8 * mm, 16 * mm]
-        item_table = Table(table_data, colWidths=col + col, repeatRows=1)
-        item_table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, 0), "HeiseiKakuGo-W5"),
-            ("FONTNAME", (0, 1), (-1, -1), "HeiseiMin-W3"),
-            ("FONTSIZE", (0, 0), (-1, -1), 6.5),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dddddd")),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("ALIGN", (0, 0), (1, -1), "CENTER"),
-            ("ALIGN", (3, 0), (3, -1), "CENTER"),
-            ("ALIGN", (5, 0), (6, -1), "CENTER"),
-            ("ALIGN", (8, 0), (8, -1), "CENTER"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 2),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-            ("TOPPADDING", (0, 0), (-1, -1), 1),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-            *span_styles,
-        ]))
-        elements.append(item_table)
-
     else:
         table_data = [["No", "点検項目", "結果", "備考"]]
         for idx, item in enumerate(items, start=1):
@@ -1153,24 +1158,6 @@ def report_pdf(category, report_id):
         elements.append(item_table)
 
     elements.append(Spacer(1, 10))
-
-    if category == "safety_patrol":
-        elements.append(Paragraph("災害防止協議会及び教育", head_style))
-        elements.append(Spacer(1, 4))
-        meeting_table = Table([
-            ["実施日", Paragraph(report["meeting_date"] or "", base_style)],
-            ["参加者名", Paragraph(report["meeting_attendees"] or "", base_style)],
-            [Paragraph("協議事項・<br/>管理重点事項", base_style), Paragraph(report["meeting_notes"] or "", base_style)],
-        ], colWidths=[40 * mm, page_width - 40 * mm])
-        meeting_table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        elements.append(meeting_table)
-        elements.append(Spacer(1, 10))
 
     elements.append(Paragraph("上司確認欄", head_style))
     elements.append(Spacer(1, 4))
