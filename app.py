@@ -1118,7 +1118,10 @@ def report_pdf(category, report_id):
 
     if category == "safety_patrol":
         buf = build_safety_patrol_pdf(report, items)
-        filename = f"{info['label']}_{report['project_name']}_{report_id}.pdf"
+        year = (report["inspect_datetime"] or "")[:4]
+        month = report["report_month"] or ""
+        period = report["report_period"] or ""
+        filename = f"{report['project_no']}_安全旬報{year}年{month}月{period}.pdf"
         return send_file(
             buf,
             mimetype="application/pdf",
