@@ -1216,6 +1216,22 @@ def approve_report(category, report_id):
     return redirect(url_for("report_detail", category=category, report_id=report_id))
 
 
+@app.route("/reports/<category>/<int:report_id>/delete", methods=["POST"])
+def delete_report(category, report_id):
+    get_inspection_type(category)
+    conn = get_db()
+    try:
+        report = fetchone(db_execute(conn, "SELECT id FROM reports WHERE id=? AND category=?", (report_id, category)))
+        if not report:
+            abort(404)
+        db_execute(conn, "DELETE FROM report_items WHERE report_id=?", (report_id,))
+        db_execute(conn, "DELETE FROM reports WHERE id=?", (report_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("reports_list", category=category))
+
+
 # ── 資料集 ───────────────────────────────────────────────────────
 @app.route("/resources/<category>")
 def resources_list(category):

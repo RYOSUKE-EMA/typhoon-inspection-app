@@ -78,5 +78,8 @@
 <div class="flex">
   <a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">一覧に戻る</a>
   <a href="{{ url_for('report_pdf', category=category, report_id=report.id) }}" class="btn btn-primary">PDF保存</a>
+  <form method="post" action="{{ url_for('delete_report', category=category, report_id=report.id) }}" onsubmit="return confirm('この旬報を削除しますか？この操作は取り消せません。');">
+    <button type="submit" class="btn btn-danger">削除</button>
+  </form>
 </div>
 {% endblock %}
