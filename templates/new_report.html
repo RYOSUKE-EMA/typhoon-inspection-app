@@ -1,27 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2>{{ info.icon }} {{ info.label }}{% if subtype_label %}（{{ subtype_label }}）{% endif %}（新規作成）</h2>
+  <h2>{{ info.icon }} {{ info.label }}{% if subtype_label %}（{{ subtype_label }}）{% endif %}{% if edit %}（編集）{% else %}（新規作成）{% endif %}</h2>
   <form method="post">
     {% if subtype %}<input type="hidden" name="subtype" value="{{ subtype }}">{% endif %}
     <div class="flex">
       <div class="form-row" style="flex:2; min-width:220px;">
         <label>工事名</label>
-        <input type="text" name="project_name" required>
+        <input type="text" name="project_name" value="{{ edit.project_name if edit else '' }}" required>
       </div>
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>工事ナンバー</label>
-        <input type="text" name="project_no">
+        <input type="text" name="project_no" value="{{ edit.project_no if edit else '' }}">
       </div>
     </div>
     <div class="flex">
       <div class="form-row" style="flex:1; min-width:220px;">
-        <label>点検日時</label>
-        <input type="datetime-local" name="inspect_datetime" value="{{ now }}" required>
+        <label>点検日</label>
+        <input type="date" name="inspect_datetime" value="{{ now }}" required>
       </div>
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>点検者</label>
-        <input type="text" name="inspector" required>
+        <input type="text" name="inspector" value="{{ edit.inspector if edit else '' }}" required>
       </div>
     </div>
 
@@ -29,7 +29,7 @@
     <div class="flex">
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>作業所長</label>
-        <input type="text" name="site_manager">
+        <input type="text" name="site_manager" value="{{ edit.site_manager if edit else '' }}">
       </div>
       <div class="form-row" style="flex:1; min-width:120px;">
         <label>対象月</label>
@@ -42,14 +42,15 @@
       <div class="form-row" style="flex:1; min-width:120px;">
         <label>旬</label>
         <select name="report_period">
-          <option value="上旬">上旬</option>
-          <option value="中旬">中旬</option>
-          <option value="下旬">下旬</option>
+          {% set current_period = edit.report_period if edit else '' %}
+          <option value="上旬" {% if current_period == '上旬' %}selected{% endif %}>上旬</option>
+          <option value="中旬" {% if current_period == '中旬' %}selected{% endif %}>中旬</option>
+          <option value="下旬" {% if current_period == '下旬' %}selected{% endif %}>下旬</option>
         </select>
       </div>
       <div class="form-row" style="flex:1; min-width:120px;">
         <label>第○回</label>
-        <input type="number" name="report_round" min="1" placeholder="回数">
+        <input type="number" name="report_round" min="1" placeholder="回数" value="{{ edit.report_round if edit else '' }}">
       </div>
     </div>
 
@@ -57,16 +58,16 @@
     <div class="flex">
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>実施日</label>
-        <input type="date" name="meeting_date">
+        <input type="date" name="meeting_date" value="{{ edit.meeting_date if edit else '' }}">
       </div>
       <div class="form-row" style="flex:2; min-width:220px;">
         <label>参加者名</label>
-        <input type="text" name="meeting_attendees" placeholder="参加者名を記入">
+        <input type="text" name="meeting_attendees" placeholder="参加者名を記入" value="{{ edit.meeting_attendees if edit else '' }}">
       </div>
     </div>
     <div class="form-row">
       <label>協議事項・管理重点事項</label>
-      <textarea name="meeting_notes" rows="3"></textarea>
+      <textarea name="meeting_notes" rows="3">{{ edit.meeting_notes if edit else '' }}</textarea>
     </div>
     {% endif %}
 
@@ -82,20 +83,26 @@
           <td>{{ item }}</td>
           <td>
             <select name="result_{{ loop.index0 }}">
+              {% set current_result = edit_items[loop.index0].result if edit_items else '' %}
               {% for opt in options %}
-              <option value="{{ opt }}">{{ opt }}</option>
+              <option value="{{ opt }}" {% if current_result == opt %}selected{% endif %}>{{ opt }}</option>
               {% endfor %}
             </select>
           </td>
-          <td><input type="text" name="note_{{ loop.index0 }}" placeholder="必要に応じて記入"></td>
+          <td><input type="text" name="note_{{ loop.index0 }}" placeholder="必要に応じて記入" value="{{ edit_items[loop.index0].note if edit_items else '' }}"></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
 
     <div class="flex" style="margin-top:20px;">
+      {% if edit %}
+      <button type="submit" class="btn btn-primary">更新する</button>
+      <a href="{{ url_for('report_detail', category=category, report_id=edit.id) }}" class="btn btn-secondary">キャンセル</a>
+      {% else %}
       <button type="submit" class="btn btn-primary">報告書を提出</button>
       <a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">キャンセル</a>
+      {% endif %}
     </div>
   </form>
 </div>

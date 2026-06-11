@@ -84,7 +84,7 @@ def build_safety_patrol_pdf(report, items):
     # 「第　　回」：回数を中央の空欄に記入
     if report["report_round"]:
         c.setFont("HeiseiKakuGo-W5", 9)
-        c.drawCentredString(270.5, y(81.0), str(report["report_round"]))
+        c.drawCentredString(279.0, y(81.0), str(report["report_round"]))
 
     # 点検結果（旬報欄）
     c.setFont("HeiseiKakuGo-W5", 9)
@@ -987,11 +987,70 @@ def new_report(category):
             conn.close()
         return redirect(url_for("report_detail", category=category, report_id=report_id))
 
-    now = datetime.now().strftime("%Y-%m-%dT%H:%M")
+    now = datetime.now().strftime("%Y-%m-%d")
     current_month = str(datetime.now().month)
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month)
+
+
+# ── 点検報告：編集 ───────────────────────────────────────────────
+@app.route("/reports/<category>/<int:report_id>/edit", methods=["GET", "POST"])
+def edit_report(category, report_id):
+    info = get_inspection_type(category)
+    result_options = info.get("result_options", RESULT_OPTIONS_DEFAULT)
+
+    conn = get_db()
+    try:
+        report = fetchone(db_execute(conn, "SELECT * FROM reports WHERE id=? AND category=?", (report_id, category)))
+        if not report:
+            abort(404)
+        items = fetchall(db_execute(conn, "SELECT * FROM report_items WHERE report_id=? ORDER BY sort_order", (report_id,)))
+
+        subtype = report["subtype"]
+        subtype_label = None
+        if "subtypes" in info and subtype and subtype in info["subtypes"]:
+            subtype_label = info["subtypes"][subtype]["label"]
+
+        if request.method == "POST":
+            f = request.form
+            project_name = f.get("project_name", "").strip()
+            project_no = f.get("project_no", "").strip()
+            inspect_datetime = f.get("inspect_datetime", "").strip()
+            inspector = f.get("inspector", "").strip()
+            site_manager = f.get("site_manager", "").strip()
+            report_month = f.get("report_month", "").strip()
+            report_period = f.get("report_period", "").strip()
+            report_round = f.get("report_round", "").strip()
+            meeting_date = f.get("meeting_date", "").strip()
+            meeting_attendees = f.get("meeting_attendees", "").strip()
+            meeting_notes = f.get("meeting_notes", "").strip()
+
+            db_execute(conn, """
+                UPDATE reports SET project_name=?, project_no=?, inspect_datetime=?, inspector=?,
+                    site_manager=?, report_month=?, report_period=?, report_round=?,
+                    meeting_date=?, meeting_attendees=?, meeting_notes=?
+                WHERE id=?
+            """, (project_name, project_no, inspect_datetime, inspector,
+                  site_manager, report_month, report_period, report_round,
+                  meeting_date, meeting_attendees, meeting_notes, report_id))
+
+            for i, item in enumerate(items):
+                result = f.get(f"result_{i}", item["result"])
+                note = f.get(f"note_{i}", "").strip()
+                db_execute(conn, "UPDATE report_items SET result=?, note=? WHERE id=?", (result, note, item["id"]))
+            conn.commit()
+            return redirect(url_for("report_detail", category=category, report_id=report_id))
+
+        checklist = [item["item_name"] for item in items]
+        now = (report["inspect_datetime"] or "")[:10]
+        current_month = report["report_month"] or str(datetime.now().month)
+    finally:
+        conn.close()
+
+    return render_template("new_report.html", category=category, info=info, checklist=checklist,
+                           options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
+                           current_month=current_month, edit=report, edit_items=items)
 
 
 # ── 点検報告：一覧 ───────────────────────────────────────────────

@@ -8,7 +8,7 @@
     {% if info.subtypes %}
     <tr><th>足場の種類</th><td>{{ info.subtypes[report.subtype].label if report.subtype and report.subtype in info.subtypes else "" }}</td></tr>
     {% endif %}
-    <tr><th>点検日時</th><td>{{ report.inspect_datetime | replace("T", " ") }}</td></tr>
+    <tr><th>点検日</th><td>{{ report.inspect_datetime[:10] }}</td></tr>
     <tr><th>点検者</th><td>{{ report.inspector }}</td></tr>
     {% if category == 'safety_patrol' %}
     <tr><th>作業所長</th><td>{{ report.site_manager or "" }}</td></tr>
@@ -82,6 +82,7 @@
 <div class="flex">
   <a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">一覧に戻る</a>
   <a href="{{ url_for('report_pdf', category=category, report_id=report.id) }}" class="btn btn-primary">PDF保存</a>
+  <a href="{{ url_for('edit_report', category=category, report_id=report.id) }}" class="btn btn-secondary">編集</a>
   <form method="post" action="{{ url_for('delete_report', category=category, report_id=report.id) }}" onsubmit="return confirmDelete(this);">
     <input type="hidden" name="password" value="">
     <button type="submit" class="btn btn-danger">削除</button>

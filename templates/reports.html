@@ -15,10 +15,10 @@
         <table style="margin-top:10px;">
           <thead>
             <tr>
-              <th>点検日時</th>
-              <th>工事名</th>
               <th>工事ナンバー</th>
+              <th>工事名</th>
               <th>点検者</th>
+              <th>点検日</th>
               <th>状態</th>
               <th></th>
             </tr>
@@ -26,10 +26,10 @@
           <tbody>
             {% for r in group.reports %}
             <tr>
-              <td>{{ r.inspect_datetime | replace("T", " ") }}</td>
-              <td>{{ r.project_name }}</td>
               <td>{{ r.project_no }}</td>
+              <td>{{ r.project_name }}</td>
               <td>{{ r.inspector }}</td>
+              <td>{{ r.inspect_datetime[:10] }}</td>
               <td>
                 {% if r.status == '確認済' %}
                 <span class="badge badge-done">確認済</span>
@@ -51,11 +51,11 @@
   <table>
     <thead>
       <tr>
-        <th>点検日時</th>
-        <th>工事名</th>
         <th>工事ナンバー</th>
+        <th>工事名</th>
         {% if info.subtypes %}<th>足場の種類</th>{% endif %}
         <th>点検者</th>
+        <th>点検日</th>
         <th>状態</th>
         <th></th>
       </tr>
@@ -63,13 +63,13 @@
     <tbody>
       {% for r in reports %}
       <tr>
-        <td>{{ r.inspect_datetime | replace("T", " ") }}</td>
-        <td>{{ r.project_name }}</td>
         <td>{{ r.project_no }}</td>
+        <td>{{ r.project_name }}</td>
         {% if info.subtypes %}
         <td>{{ info.subtypes[r.subtype].label if r.subtype and r.subtype in info.subtypes else "" }}</td>
         {% endif %}
         <td>{{ r.inspector }}</td>
+        <td>{{ r.inspect_datetime[:10] }}</td>
         <td>
           {% if r.status == '確認済' %}
           <span class="badge badge-done">確認済</span>
