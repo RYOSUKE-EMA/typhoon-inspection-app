@@ -703,6 +703,12 @@ def init_db():
             )""")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'typhoon'")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS subtype TEXT")
+            cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS site_manager TEXT")
+            cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_month TEXT")
+            cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_period TEXT")
+            cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_date TEXT")
+            cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_attendees TEXT")
+            cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_notes TEXT")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS report_items (
                 id SERIAL PRIMARY KEY,
@@ -765,6 +771,9 @@ def init_db():
                 conn.execute("ALTER TABLE reports ADD COLUMN category TEXT NOT NULL DEFAULT 'typhoon'")
             if "subtype" not in cols:
                 conn.execute("ALTER TABLE reports ADD COLUMN subtype TEXT")
+            for col in ("site_manager", "report_month", "report_period", "meeting_date", "meeting_attendees", "meeting_notes"):
+                if col not in cols:
+                    conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
             res_cols = [r[1] for r in conn.execute("PRAGMA table_info(resources)").fetchall()]
             if "category" not in res_cols:
                 conn.execute("ALTER TABLE resources ADD COLUMN category TEXT NOT NULL DEFAULT 'typhoon'")
@@ -821,13 +830,21 @@ def new_report(category):
         project_no = f.get("project_no", "").strip()
         inspect_datetime = f.get("inspect_datetime", "").strip()
         inspector = f.get("inspector", "").strip()
+        site_manager = f.get("site_manager", "").strip()
+        report_month = f.get("report_month", "").strip()
+        report_period = f.get("report_period", "").strip()
+        meeting_date = f.get("meeting_date", "").strip()
+        meeting_attendees = f.get("meeting_attendees", "").strip()
+        meeting_notes = f.get("meeting_notes", "").strip()
 
         conn = get_db()
         try:
             cur = db_execute(conn, """
-                INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at)
-                VALUES (?,?,?,?,?,?,?,?)
-            """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", datetime.now().isoformat(timespec="seconds")))
+                INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
+                                      site_manager, report_month, report_period, meeting_date, meeting_attendees, meeting_notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", datetime.now().isoformat(timespec="seconds"),
+                  site_manager, report_month, report_period, meeting_date, meeting_attendees, meeting_notes))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
             else:
@@ -846,8 +863,10 @@ def new_report(category):
         return redirect(url_for("report_detail", category=category, report_id=report_id))
 
     now = datetime.now().strftime("%Y-%m-%dT%H:%M")
+    current_month = str(datetime.now().month)
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
-                           options=result_options, subtype=subtype, subtype_label=subtype_label, now=now)
+                           options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
+                           current_month=current_month)
 
 
 # ── 点検報告：一覧 ───────────────────────────────────────────────
@@ -892,6 +911,8 @@ def report_pdf(category, report_id):
     styles = getSampleStyleSheet()
     base_style = ParagraphStyle("jp", parent=styles["Normal"], fontName="HeiseiMin-W3", fontSize=9, leading=12)
     small_style = ParagraphStyle("jpSmall", parent=styles["Normal"], fontName="HeiseiMin-W3", fontSize=7.5, leading=10)
+    patrol_style = ParagraphStyle("jpPatrol", parent=styles["Normal"], fontName="HeiseiMin-W3", fontSize=6, leading=7.2)
+    patrol_group_style = ParagraphStyle("jpPatrolGroup", parent=styles["Normal"], fontName="HeiseiKakuGo-W5", fontSize=6, leading=7.2, alignment=1)
     title_style = ParagraphStyle("jpTitle", parent=styles["Heading1"], fontName="HeiseiKakuGo-W5", fontSize=16, leading=20)
     head_style = ParagraphStyle("jpHead", parent=styles["Heading2"], fontName="HeiseiKakuGo-W5", fontSize=11, leading=14)
 
@@ -909,35 +930,66 @@ def report_pdf(category, report_id):
         topMargin=12 * mm, bottomMargin=12 * mm, leftMargin=12 * mm, rightMargin=12 * mm,
     )
 
-    elements = []
-    elements.append(Paragraph(f"{info['icon']} {info['label']}", title_style))
-    elements.append(Spacer(1, 6))
-
-    status_label = "確認済" if report["status"] == "確認済" else "確認待ち"
-    info_rows = [
-        ["工事名", Paragraph(report["project_name"] or "", base_style), "工事ナンバー", Paragraph(report["project_no"] or "", base_style)],
-        ["点検日時", Paragraph((report["inspect_datetime"] or "").replace("T", " "), base_style), "点検者", Paragraph(report["inspector"] or "", base_style)],
-    ]
-    if subtype_label:
-        info_rows.append(["足場の種類", Paragraph(subtype_label, base_style), "状態", Paragraph(status_label, base_style)])
-    else:
-        info_rows.append(["状態", Paragraph(status_label, base_style), "", ""])
     page_width = pagesize[0] - 24 * mm
     label_w = 28 * mm
     value_w = (page_width - 2 * label_w) / 2
-    info_table = Table(info_rows, colWidths=[label_w, value_w, label_w, value_w])
-    info_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
-        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    if not subtype_label:
-        info_table.setStyle(TableStyle([("SPAN", (1, 2), (3, 2))]))
-    elements.append(info_table)
-    elements.append(Spacer(1, 10))
+
+    elements = []
+
+    if category == "safety_patrol":
+        period_label = f"{report['report_month']}月　{report['report_period']}" if report["report_month"] else ""
+        title_text = f"{period_label}　{info['label']}" if period_label else info['label']
+        try:
+            submitted = datetime.fromisoformat(report["created_at"])
+            submitted_label = f"{submitted.month}月{submitted.day}日提出"
+        except (ValueError, TypeError):
+            submitted_label = ""
+        elements.append(Paragraph(title_text, title_style))
+        elements.append(Spacer(1, 6))
+
+        status_label = "確認済" if report["status"] == "確認済" else "確認待ち"
+        info_rows = [
+            ["工事NO", Paragraph(report["project_no"] or "", base_style), "工事名", Paragraph(report["project_name"] or "", base_style)],
+            ["作業所長", Paragraph(report["site_manager"] or "", base_style), "点検記入者", Paragraph(report["inspector"] or "", base_style)],
+            ["提出日", Paragraph(submitted_label, base_style), "状態", Paragraph(status_label, base_style)],
+        ]
+        info_table = Table(info_rows, colWidths=[label_w, value_w, label_w, value_w])
+        info_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
+            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        elements.append(info_table)
+        elements.append(Spacer(1, 10))
+    else:
+        elements.append(Paragraph(f"{info['icon']} {info['label']}", title_style))
+        elements.append(Spacer(1, 6))
+
+        status_label = "確認済" if report["status"] == "確認済" else "確認待ち"
+        info_rows = [
+            ["工事名", Paragraph(report["project_name"] or "", base_style), "工事ナンバー", Paragraph(report["project_no"] or "", base_style)],
+            ["点検日時", Paragraph((report["inspect_datetime"] or "").replace("T", " "), base_style), "点検者", Paragraph(report["inspector"] or "", base_style)],
+        ]
+        if subtype_label:
+            info_rows.append(["足場の種類", Paragraph(subtype_label, base_style), "状態", Paragraph(status_label, base_style)])
+        else:
+            info_rows.append(["状態", Paragraph(status_label, base_style), "", ""])
+        info_table = Table(info_rows, colWidths=[label_w, value_w, label_w, value_w])
+        info_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
+            ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eeeeee")),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        if not subtype_label:
+            info_table.setStyle(TableStyle([("SPAN", (1, 2), (3, 2))]))
+        elements.append(info_table)
+        elements.append(Spacer(1, 10))
 
     elements.append(Paragraph("点検項目", head_style))
     elements.append(Spacer(1, 4))
@@ -989,38 +1041,91 @@ def report_pdf(category, report_id):
         elements.append(item_table)
 
     elif category == "safety_patrol":
-        # 安全・環境旬報形式：30項目ずつ2列に並べる
+        # 安全・環境旬報形式：区分列＋30項目ずつ2列に並べる
+        SAFETY_PATROL_GROUPS = [
+            (1, 6, "A 第三者災害防止対策"),
+            (7, 14, "B 掲示物・管理体制"),
+            (15, 17, "C 火災"),
+            (18, 25, "D 墜落・落下防止対策"),
+            (26, 31, "E 電気工具"),
+            (32, 39, "重機・リフト"),
+            (40, 49, "F・G 仮設"),
+            (50, 51, "H 型枠"),
+            (52, 54, "環境"),
+            (55, 60, "その他"),
+        ]
+
+        def group_label(n):
+            for start, end, label in SAFETY_PATROL_GROUPS:
+                if start <= n <= end:
+                    return label
+            return ""
+
         half = (len(items) + 1) // 2
         left_items = items[:half]
         right_items = items[half:]
-        table_data = [["No", "点検項目", "結果", "備考", "No", "点検項目", "結果", "備考"]]
+        table_data = [["区分", "No", "点検項目", "旬報", "備考", "区分", "No", "点検項目", "旬報", "備考"]]
+        span_styles = []
+        left_group_start = None
+        left_last_group = None
+        right_group_start = None
+        right_last_group = None
         for i in range(half):
             row = []
             if i < len(left_items):
                 item = left_items[i]
-                row += [str(i + 1), Paragraph(item["item_name"] or "", small_style), item["result"] or "", Paragraph(item["note"] or "", small_style)]
+                g = group_label(i + 1)
+                if g != left_last_group:
+                    if left_last_group is not None and i - left_group_start > 1:
+                        span_styles.append(("SPAN", (0, left_group_start + 1), (0, i)))
+                    left_group_start = i
+                    left_last_group = g
+                    group_cell = Paragraph(g, patrol_group_style)
+                else:
+                    group_cell = ""
+                row += [group_cell, str(i + 1), Paragraph(item["item_name"] or "", patrol_style), item["result"] or "", Paragraph(item["note"] or "", patrol_style)]
             else:
-                row += ["", "", "", ""]
+                row += ["", "", "", "", ""]
             j = half + i
             if i < len(right_items):
                 item = right_items[i]
-                row += [str(j + 1), Paragraph(item["item_name"] or "", small_style), item["result"] or "", Paragraph(item["note"] or "", small_style)]
+                g = group_label(j + 1)
+                if g != right_last_group:
+                    if right_last_group is not None and i - right_group_start > 1:
+                        span_styles.append(("SPAN", (5, right_group_start + 1), (5, i)))
+                    right_group_start = i
+                    right_last_group = g
+                    group_cell = Paragraph(g, patrol_group_style)
+                else:
+                    group_cell = ""
+                row += [group_cell, str(j + 1), Paragraph(item["item_name"] or "", patrol_style), item["result"] or "", Paragraph(item["note"] or "", patrol_style)]
             else:
-                row += ["", "", "", ""]
+                row += ["", "", "", "", ""]
             table_data.append(row)
-        col = [8 * mm, 100 * mm, 12 * mm, 22 * mm]
+
+        if left_last_group is not None and half - left_group_start > 1:
+            span_styles.append(("SPAN", (0, left_group_start + 1), (0, half)))
+        if right_last_group is not None and half - right_group_start > 1:
+            span_styles.append(("SPAN", (5, right_group_start + 1), (5, half)))
+
+        col = [14 * mm, 6 * mm, 86 * mm, 8 * mm, 16 * mm]
         item_table = Table(table_data, colWidths=col + col, repeatRows=1)
         item_table.setStyle(TableStyle([
             ("FONTNAME", (0, 0), (-1, 0), "HeiseiKakuGo-W5"),
             ("FONTNAME", (0, 1), (-1, -1), "HeiseiMin-W3"),
-            ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+            ("FONTSIZE", (0, 0), (-1, -1), 6.5),
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dddddd")),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("ALIGN", (0, 0), (0, -1), "CENTER"),
-            ("ALIGN", (2, 0), (2, -1), "CENTER"),
-            ("ALIGN", (4, 0), (4, -1), "CENTER"),
-            ("ALIGN", (6, 0), (6, -1), "CENTER"),
+            ("ALIGN", (0, 0), (1, -1), "CENTER"),
+            ("ALIGN", (3, 0), (3, -1), "CENTER"),
+            ("ALIGN", (5, 0), (6, -1), "CENTER"),
+            ("ALIGN", (8, 0), (8, -1), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            *span_styles,
         ]))
         elements.append(item_table)
 
@@ -1048,6 +1153,24 @@ def report_pdf(category, report_id):
         elements.append(item_table)
 
     elements.append(Spacer(1, 10))
+
+    if category == "safety_patrol":
+        elements.append(Paragraph("災害防止協議会及び教育", head_style))
+        elements.append(Spacer(1, 4))
+        meeting_table = Table([
+            ["実施日", Paragraph(report["meeting_date"] or "", base_style)],
+            ["参加者名", Paragraph(report["meeting_attendees"] or "", base_style)],
+            [Paragraph("協議事項・<br/>管理重点事項", base_style), Paragraph(report["meeting_notes"] or "", base_style)],
+        ], colWidths=[40 * mm, page_width - 40 * mm])
+        meeting_table.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eeeeee")),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        elements.append(meeting_table)
+        elements.append(Spacer(1, 10))
 
     elements.append(Paragraph("上司確認欄", head_style))
     elements.append(Spacer(1, 4))

@@ -10,6 +10,10 @@
     {% endif %}
     <tr><th>点検日時</th><td>{{ report.inspect_datetime | replace("T", " ") }}</td></tr>
     <tr><th>点検者</th><td>{{ report.inspector }}</td></tr>
+    {% if category == 'safety_patrol' %}
+    <tr><th>作業所長</th><td>{{ report.site_manager or "" }}</td></tr>
+    <tr><th>対象期間</th><td>{{ report.report_month ~ "月 " ~ report.report_period if report.report_month else "" }}</td></tr>
+    {% endif %}
     <tr><th>状態</th><td>
       {% if report.status == '確認済' %}
       <span class="badge badge-done">確認済</span>
@@ -36,6 +40,17 @@
     </tbody>
   </table>
 </div>
+
+{% if category == 'safety_patrol' %}
+<div class="card">
+  <h2>災害防止協議会及び教育</h2>
+  <table>
+    <tr><th style="width:160px;">実施日</th><td>{{ report.meeting_date or "" }}</td></tr>
+    <tr><th>参加者名</th><td>{{ report.meeting_attendees or "" }}</td></tr>
+    <tr><th>協議事項・管理重点事項</th><td>{{ report.meeting_notes or "" }}</td></tr>
+  </table>
+</div>
+{% endif %}
 
 <div class="card">
   <h2>上司確認欄</h2>
