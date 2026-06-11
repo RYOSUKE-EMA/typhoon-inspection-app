@@ -57,5 +57,8 @@
   {% endif %}
 </div>
 
-<a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">一覧に戻る</a>
+<div class="flex">
+  <a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">一覧に戻る</a>
+  <a href="{{ url_for('report_pdf', category=category, report_id=report.id) }}" class="btn btn-primary">PDF保存</a>
+</div>
 {% endblock %}
