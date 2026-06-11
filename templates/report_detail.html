@@ -13,6 +13,7 @@
     {% if category == 'safety_patrol' %}
     <tr><th>作業所長</th><td>{{ report.site_manager or "" }}</td></tr>
     <tr><th>対象期間</th><td>{{ report.report_month ~ "月 " ~ report.report_period if report.report_month else "" }}</td></tr>
+    <tr><th>第○回</th><td>{{ report.report_round or "" }}</td></tr>
     {% endif %}
     <tr><th>状態</th><td>
       {% if report.status == '確認済' %}
@@ -75,11 +76,29 @@
   {% endif %}
 </div>
 
+{% if request.args.get('delete_error') %}
+<p style="color:#b03a2e; font-weight:bold;">パスワードが正しくないため削除できませんでした。</p>
+{% endif %}
 <div class="flex">
   <a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">一覧に戻る</a>
   <a href="{{ url_for('report_pdf', category=category, report_id=report.id) }}" class="btn btn-primary">PDF保存</a>
-  <form method="post" action="{{ url_for('delete_report', category=category, report_id=report.id) }}" onsubmit="return confirm('この旬報を削除しますか？この操作は取り消せません。');">
+  <form method="post" action="{{ url_for('delete_report', category=category, report_id=report.id) }}" onsubmit="return confirmDelete(this);">
+    <input type="hidden" name="password" value="">
     <button type="submit" class="btn btn-danger">削除</button>
   </form>
 </div>
+
+<script>
+function confirmDelete(form) {
+  if (!confirm('この旬報を削除しますか？この操作は取り消せません。')) {
+    return false;
+  }
+  var pw = prompt('削除用パスワードを入力してください');
+  if (pw === null) {
+    return false;
+  }
+  form.elements['password'].value = pw;
+  return true;
+}
+</script>
 {% endblock %}

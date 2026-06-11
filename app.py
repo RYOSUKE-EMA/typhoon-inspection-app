@@ -18,6 +18,9 @@ from pypdf import PdfReader, PdfWriter
 pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
 pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
 
+# ── 報告書削除用パスワード ──
+DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "0000")
+
 # ── 安全・環境旬報：公式テンプレートPDFへの重ね書き ──
 SAFETY_PATROL_TEMPLATE = os.path.join(os.path.dirname(__file__), "pdf_templates", "safety_patrol.pdf")
 SAFETY_PATROL_PAGE_W = 595.2
@@ -78,13 +81,18 @@ def build_safety_patrol_pdf(report, items):
     except (ValueError, TypeError):
         pass
 
+    # 「第　　回」：回数を中央の空欄に記入
+    if report["report_round"]:
+        c.setFont("HeiseiKakuGo-W5", 9)
+        c.drawCentredString(270.5, y(81.0), str(report["report_round"]))
+
     # 点検結果（旬報欄）
     c.setFont("HeiseiKakuGo-W5", 9)
     for i, item in enumerate(items[:60]):
         if i >= len(SAFETY_PATROL_RESULT_POS):
             break
         x, by = SAFETY_PATROL_RESULT_POS[i]
-        c.drawCentredString(x, y(by) + 1, item["result"] or "")
+        c.drawCentredString(x, y(by) - 1.5, item["result"] or "")
 
     # 災害防止協議会及び教育：実施日（月日）
     if report["meeting_date"]:
@@ -821,6 +829,7 @@ def init_db():
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS site_manager TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_month TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_period TEXT")
+            cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS report_round TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_date TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_attendees TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_notes TEXT")
@@ -886,7 +895,7 @@ def init_db():
                 conn.execute("ALTER TABLE reports ADD COLUMN category TEXT NOT NULL DEFAULT 'typhoon'")
             if "subtype" not in cols:
                 conn.execute("ALTER TABLE reports ADD COLUMN subtype TEXT")
-            for col in ("site_manager", "report_month", "report_period", "meeting_date", "meeting_attendees", "meeting_notes"):
+            for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
             res_cols = [r[1] for r in conn.execute("PRAGMA table_info(resources)").fetchall()]
@@ -948,6 +957,7 @@ def new_report(category):
         site_manager = f.get("site_manager", "").strip()
         report_month = f.get("report_month", "").strip()
         report_period = f.get("report_period", "").strip()
+        report_round = f.get("report_round", "").strip()
         meeting_date = f.get("meeting_date", "").strip()
         meeting_attendees = f.get("meeting_attendees", "").strip()
         meeting_notes = f.get("meeting_notes", "").strip()
@@ -956,10 +966,10 @@ def new_report(category):
         try:
             cur = db_execute(conn, """
                 INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
-                                      site_manager, report_month, report_period, meeting_date, meeting_attendees, meeting_notes)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                      site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", datetime.now().isoformat(timespec="seconds"),
-                  site_manager, report_month, report_period, meeting_date, meeting_attendees, meeting_notes))
+                  site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
             else:
@@ -985,6 +995,9 @@ def new_report(category):
 
 
 # ── 点検報告：一覧 ───────────────────────────────────────────────
+PERIOD_ORDER = {"上旬": 0, "中旬": 1, "下旬": 2}
+
+
 @app.route("/reports/<category>")
 def reports_list(category):
     info = get_inspection_type(category)
@@ -993,7 +1006,28 @@ def reports_list(category):
         reports = fetchall(db_execute(conn, "SELECT * FROM reports WHERE category=? ORDER BY id DESC", (category,)))
     finally:
         conn.close()
-    return render_template("reports.html", category=category, info=info, reports=reports)
+
+    groups = None
+    if category == "safety_patrol":
+        grouped = {}
+        for r in reports:
+            key = (r["report_month"] or "", r["report_period"] or "")
+            grouped.setdefault(key, []).append(r)
+
+        def sort_key(key):
+            month, period = key
+            try:
+                month_num = int(month)
+            except (ValueError, TypeError):
+                month_num = -1
+            return (-month_num, PERIOD_ORDER.get(period, 9))
+
+        groups = []
+        for (month, period), group_reports in sorted(grouped.items(), key=lambda kv: sort_key(kv[0])):
+            label = f"{month}月 {period}" if month else "対象期間未設定"
+            groups.append({"label": label, "reports": group_reports})
+
+    return render_template("reports.html", category=category, info=info, reports=reports, groups=groups)
 
 
 # ── 点検報告：詳細・上司確認 ──────────────────────────────────────
@@ -1219,6 +1253,8 @@ def approve_report(category, report_id):
 @app.route("/reports/<category>/<int:report_id>/delete", methods=["POST"])
 def delete_report(category, report_id):
     get_inspection_type(category)
+    if request.form.get("password", "") != DELETE_PASSWORD:
+        return redirect(url_for("report_detail", category=category, report_id=report_id, delete_error=1))
     conn = get_db()
     try:
         report = fetchone(db_execute(conn, "SELECT id FROM reports WHERE id=? AND category=?", (report_id, category)))

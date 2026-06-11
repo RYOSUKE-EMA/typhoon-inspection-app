@@ -7,7 +7,47 @@
     <a class="btn btn-secondary" href="{{ url_for('resources_list', category=category) }}">📚 資料集</a>
     <a class="btn btn-secondary" href="{{ url_for('index') }}">トップに戻る</a>
   </div>
-  {% if reports %}
+  {% if groups is not none %}
+    {% if groups %}
+      {% for group in groups %}
+      <details class="card" style="margin-bottom:10px;" {% if loop.first %}open{% endif %}>
+        <summary style="cursor:pointer; font-weight:bold; font-size:1.05rem;">📁 {{ group.label }}（{{ group.reports|length }}件）</summary>
+        <table style="margin-top:10px;">
+          <thead>
+            <tr>
+              <th>点検日時</th>
+              <th>工事名</th>
+              <th>工事ナンバー</th>
+              <th>点検者</th>
+              <th>状態</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in group.reports %}
+            <tr>
+              <td>{{ r.inspect_datetime | replace("T", " ") }}</td>
+              <td>{{ r.project_name }}</td>
+              <td>{{ r.project_no }}</td>
+              <td>{{ r.inspector }}</td>
+              <td>
+                {% if r.status == '確認済' %}
+                <span class="badge badge-done">確認済</span>
+                {% else %}
+                <span class="badge badge-pending">確認待ち</span>
+                {% endif %}
+              </td>
+              <td><a class="btn btn-primary btn-sm" href="{{ url_for('report_detail', category=category, report_id=r.id) }}">詳細</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endfor %}
+    {% else %}
+    <p>まだ報告書がありません。</p>
+    {% endif %}
+  {% elif reports %}
   <table>
     <thead>
       <tr>
