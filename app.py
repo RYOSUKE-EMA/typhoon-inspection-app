@@ -2,6 +2,7 @@ import os
 import mimetypes
 from datetime import datetime
 
+import requests
 from flask import Flask, render_template, request, redirect, url_for, send_file, abort
 from io import BytesIO
 
@@ -20,6 +21,90 @@ pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
 
 # ── 報告書削除用パスワード ──
 DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "0000")
+
+# ── kintone連携（安全旬報のバックアップ・閲覧用） ──
+KINTONE_SUBDOMAIN = os.environ.get("KINTONE_SUBDOMAIN", "symgrp")
+KINTONE_APP_ID = os.environ.get("KINTONE_APP_ID", "5287")
+KINTONE_API_TOKEN = os.environ.get("KINTONE_API_TOKEN", "")
+
+
+def sync_report_to_kintone(report, items):
+    """安全旬報の報告書をkintoneに自動連携する（失敗してもアプリ本体には影響させない）。"""
+    if report["category"] != "safety_patrol" or not KINTONE_API_TOKEN:
+        return
+    base = f"https://{KINTONE_SUBDOMAIN}.cybozu.com/k/v1"
+    get_headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN}
+    write_headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN, "Content-Type": "application/json"}
+    record = {
+        "report_id": {"value": report["id"]},
+        "project_name": {"value": report["project_name"] or ""},
+        "project_no": {"value": report["project_no"] or ""},
+        "inspector": {"value": report["inspector"] or ""},
+        "site_manager": {"value": report["site_manager"] or ""},
+        "inspect_date": {"value": (report["inspect_datetime"] or "")[:10] or None},
+        "report_month": {"value": report["report_month"] or ""},
+        "report_period": {"value": report["report_period"] or ""},
+        "report_round": {"value": report["report_round"] or ""},
+        "meeting_date": {"value": report["meeting_date"] or None},
+        "meeting_attendees": {"value": report["meeting_attendees"] or ""},
+        "meeting_notes": {"value": report["meeting_notes"] or ""},
+        "status": {"value": report["status"] or ""},
+        "checklist": {"value": [
+            {"value": {
+                "item_no": {"value": i + 1},
+                "item_name": {"value": item["item_name"] or ""},
+                "item_result": {"value": item["result"] or ""},
+                "item_note": {"value": item["note"] or ""},
+            }} for i, item in enumerate(items)
+        ]},
+    }
+    try:
+        resp = requests.get(
+            f"{base}/records.json", headers=get_headers,
+            params={"app": KINTONE_APP_ID, "query": f'report_id = "{report["id"]}"'},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        existing = resp.json().get("records", [])
+        if existing:
+            kintone_record_id = existing[0]["$id"]["value"]
+            requests.put(
+                f"{base}/record.json", headers=write_headers,
+                json={"app": KINTONE_APP_ID, "id": kintone_record_id, "record": record},
+                timeout=10,
+            ).raise_for_status()
+        else:
+            requests.post(
+                f"{base}/record.json", headers=write_headers,
+                json={"app": KINTONE_APP_ID, "record": record},
+                timeout=10,
+            ).raise_for_status()
+    except Exception as e:
+        print(f"kintone sync failed: {e}")
+
+
+def delete_report_from_kintone(report_id):
+    if not KINTONE_API_TOKEN:
+        return
+    base = f"https://{KINTONE_SUBDOMAIN}.cybozu.com/k/v1"
+    get_headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN}
+    try:
+        resp = requests.get(
+            f"{base}/records.json", headers=get_headers,
+            params={"app": KINTONE_APP_ID, "query": f'report_id = "{report_id}"'},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        existing = resp.json().get("records", [])
+        if existing:
+            kintone_record_id = existing[0]["$id"]["value"]
+            requests.delete(
+                f"{base}/records.json", headers=get_headers,
+                params={"app": KINTONE_APP_ID, "ids[0]": kintone_record_id},
+                timeout=10,
+            ).raise_for_status()
+    except Exception as e:
+        print(f"kintone delete failed: {e}")
 
 # ── 安全・環境旬報：公式テンプレートPDFへの重ね書き ──
 SAFETY_PATROL_TEMPLATE = os.path.join(os.path.dirname(__file__), "pdf_templates", "safety_patrol.pdf")
@@ -975,6 +1060,7 @@ def new_report(category):
             else:
                 report_id = cur.lastrowid
 
+            sync_items = []
             for i, item_name in enumerate(checklist):
                 result = f.get(f"result_{i}", "－")
                 note = f.get(f"note_{i}", "").strip()
@@ -982,9 +1068,18 @@ def new_report(category):
                     INSERT INTO report_items (report_id, item_name, result, note, sort_order)
                     VALUES (?,?,?,?,?)
                 """, (report_id, item_name, result, note, i))
+                sync_items.append({"item_name": item_name, "result": result, "note": note})
             conn.commit()
         finally:
             conn.close()
+
+        sync_report_to_kintone({
+            "id": report_id, "category": category, "project_name": project_name, "project_no": project_no,
+            "inspect_datetime": inspect_datetime, "inspector": inspector, "site_manager": site_manager,
+            "report_month": report_month, "report_period": report_period, "report_round": report_round,
+            "meeting_date": meeting_date, "meeting_attendees": meeting_attendees, "meeting_notes": meeting_notes,
+            "status": "未確認",
+        }, sync_items)
         return redirect(url_for("report_detail", category=category, report_id=report_id))
 
     now = datetime.now().strftime("%Y-%m-%d")
@@ -1035,11 +1130,21 @@ def edit_report(category, report_id):
                   site_manager, report_month, report_period, report_round,
                   meeting_date, meeting_attendees, meeting_notes, report_id))
 
+            sync_items = []
             for i, item in enumerate(items):
                 result = f.get(f"result_{i}", item["result"])
                 note = f.get(f"note_{i}", "").strip()
                 db_execute(conn, "UPDATE report_items SET result=?, note=? WHERE id=?", (result, note, item["id"]))
+                sync_items.append({"item_name": item["item_name"], "result": result, "note": note})
             conn.commit()
+
+            sync_report_to_kintone({
+                "id": report_id, "category": category, "project_name": project_name, "project_no": project_no,
+                "inspect_datetime": inspect_datetime, "inspector": inspector, "site_manager": site_manager,
+                "report_month": report_month, "report_period": report_period, "report_round": report_round,
+                "meeting_date": meeting_date, "meeting_attendees": meeting_attendees, "meeting_notes": meeting_notes,
+                "status": report["status"],
+            }, sync_items)
             return redirect(url_for("report_detail", category=category, report_id=report_id))
 
         checklist = [item["item_name"] for item in items]
@@ -1307,8 +1412,13 @@ def approve_report(category, report_id):
             WHERE id=?
         """, ("確認済", approver_name, approver_comment, datetime.now().isoformat(timespec="seconds"), report_id))
         conn.commit()
+        items = fetchall(db_execute(conn, "SELECT * FROM report_items WHERE report_id=? ORDER BY sort_order", (report_id,)))
     finally:
         conn.close()
+
+    report = dict(report)
+    report["status"] = "確認済"
+    sync_report_to_kintone(report, items)
     return redirect(url_for("report_detail", category=category, report_id=report_id))
 
 
@@ -1327,6 +1437,7 @@ def delete_report(category, report_id):
         conn.commit()
     finally:
         conn.close()
+    delete_report_from_kintone(report_id)
     return redirect(url_for("reports_list", category=category))
 
 
