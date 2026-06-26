@@ -35,6 +35,25 @@ def sync_report_to_kintone(report, items):
     base = f"https://{KINTONE_SUBDOMAIN}.cybozu.com/k/v1"
     get_headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN}
     write_headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN, "Content-Type": "application/json"}
+
+    file_key = None
+    try:
+        pdf_buf = build_safety_patrol_pdf(report, items)
+        year = (report["inspect_datetime"] or "")[:4]
+        month = report["report_month"] or ""
+        period = report["report_period"] or ""
+        filename = f"{report['project_no']}_安全旬報{year}年{month}月{period}.pdf"
+        upload_resp = requests.post(
+            f"{base}/file.json",
+            headers={"X-Cybozu-API-Token": KINTONE_API_TOKEN},
+            files={"file": (filename, pdf_buf.getvalue(), "application/pdf")},
+            timeout=20,
+        )
+        upload_resp.raise_for_status()
+        file_key = upload_resp.json()["fileKey"]
+    except Exception as e:
+        print(f"kintone pdf upload failed: {e}")
+
     record = {
         "report_id": {"value": report["id"]},
         "project_name": {"value": report["project_name"] or ""},
@@ -58,6 +77,8 @@ def sync_report_to_kintone(report, items):
             }} for i, item in enumerate(items)
         ]},
     }
+    if file_key:
+        record["pdf_file"] = {"value": [{"fileKey": file_key}]}
     try:
         resp = requests.get(
             f"{base}/records.json", headers=get_headers,
@@ -1047,13 +1068,14 @@ def new_report(category):
         meeting_attendees = f.get("meeting_attendees", "").strip()
         meeting_notes = f.get("meeting_notes", "").strip()
 
+        created_at = datetime.now().isoformat(timespec="seconds")
         conn = get_db()
         try:
             cur = db_execute(conn, """
                 INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
                                       site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", datetime.now().isoformat(timespec="seconds"),
+            """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", created_at,
                   site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
@@ -1078,7 +1100,7 @@ def new_report(category):
             "inspect_datetime": inspect_datetime, "inspector": inspector, "site_manager": site_manager,
             "report_month": report_month, "report_period": report_period, "report_round": report_round,
             "meeting_date": meeting_date, "meeting_attendees": meeting_attendees, "meeting_notes": meeting_notes,
-            "status": "未確認",
+            "status": "未確認", "created_at": created_at,
         }, sync_items)
         return redirect(url_for("report_detail", category=category, report_id=report_id))
 
@@ -1143,7 +1165,7 @@ def edit_report(category, report_id):
                 "inspect_datetime": inspect_datetime, "inspector": inspector, "site_manager": site_manager,
                 "report_month": report_month, "report_period": report_period, "report_round": report_round,
                 "meeting_date": meeting_date, "meeting_attendees": meeting_attendees, "meeting_notes": meeting_notes,
-                "status": report["status"],
+                "status": report["status"], "created_at": report["created_at"],
             }, sync_items)
             return redirect(url_for("report_detail", category=category, report_id=report_id))
 
