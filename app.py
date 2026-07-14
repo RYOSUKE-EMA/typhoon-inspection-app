@@ -1106,9 +1106,16 @@ def new_report(category):
 
     now = datetime.now().strftime("%Y-%m-%d")
     current_month = str(datetime.now().month)
+    # ポータル等からクエリパラメータで工事情報を事前入力できるようにする
+    prefill = {
+        "project_name": request.args.get("project_name", "").strip(),
+        "project_no": request.args.get("project_no", "").strip(),
+        "inspector": request.args.get("inspector", "").strip(),
+        "site_manager": request.args.get("site_manager", "").strip(),
+    }
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
-                           current_month=current_month)
+                           current_month=current_month, prefill=prefill)
 
 
 # ── 点検報告：編集 ───────────────────────────────────────────────

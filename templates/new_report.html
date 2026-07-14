@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set pf = prefill|default({}) %}
 <div class="card">
   <h2>{{ info.icon }} {{ info.label }}{% if subtype_label %}（{{ subtype_label }}）{% endif %}{% if edit %}（編集）{% else %}（新規作成）{% endif %}</h2>
   <form method="post">
@@ -7,11 +8,11 @@
     <div class="flex">
       <div class="form-row" style="flex:2; min-width:220px;">
         <label>工事名</label>
-        <input type="text" name="project_name" value="{{ edit.project_name if edit else '' }}" required>
+        <input type="text" name="project_name" value="{{ edit.project_name if edit else pf.get('project_name', '') }}" required>
       </div>
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>工事ナンバー</label>
-        <input type="text" name="project_no" value="{{ edit.project_no if edit else '' }}">
+        <input type="text" name="project_no" value="{{ edit.project_no if edit else pf.get('project_no', '') }}">
       </div>
     </div>
     <div class="flex">
@@ -21,7 +22,7 @@
       </div>
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>点検者</label>
-        <input type="text" name="inspector" value="{{ edit.inspector if edit else '' }}" required>
+        <input type="text" name="inspector" value="{{ edit.inspector if edit else pf.get('inspector', '') }}" required>
       </div>
     </div>
 
@@ -29,7 +30,7 @@
     <div class="flex">
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>作業所長</label>
-        <input type="text" name="site_manager" value="{{ edit.site_manager if edit else '' }}">
+        <input type="text" name="site_manager" value="{{ edit.site_manager if edit else pf.get('site_manager', '') }}">
       </div>
       <div class="form-row" style="flex:1; min-width:120px;">
         <label>対象月</label>
