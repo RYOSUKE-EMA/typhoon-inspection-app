@@ -3,11 +3,14 @@
 <div class="card">
   <h2>現場点検システム</h2>
   <p>工事現場の各種点検記録を作成・共有し、上司への報告を行うためのシステムです。</p>
+  {% if pq and pq.project_name %}
+  <p style="margin-top:8px;color:#2563eb;font-weight:600;">対象工事：{{ pq.project_name }}{% if pq.project_no %}（{{ pq.project_no }}）{% endif %}</p>
+  {% endif %}
 </div>
 
 <div class="menu-grid">
   {% for key, info in types.items() %}
-  <a class="menu-card" href="{{ url_for('reports_list', category=key) }}">
+  <a class="menu-card" href="{{ url_for('reports_list', category=key) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">
     {% if counts[key] > 0 %}
     <span class="badge badge-pending pending-badge">確認待ち {{ counts[key] }}</span>
     {% endif %}

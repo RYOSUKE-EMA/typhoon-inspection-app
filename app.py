@@ -1021,6 +1021,16 @@ def to_bytes(data):
 
 
 # ── トップページ ─────────────────────────────────────────────────
+# ポータル等から渡される工事情報を、画面遷移中もリンクへ引き継ぐためのクエリ
+def _project_query():
+    pq = {}
+    for k in ("project_name", "project_no", "inspector", "site_manager"):
+        v = request.args.get(k, "").strip()
+        if v:
+            pq[k] = v
+    return pq
+
+
 @app.route("/")
 def index():
     conn = get_db()
@@ -1031,7 +1041,7 @@ def index():
             counts[category] = row["c"]
     finally:
         conn.close()
-    return render_template("index.html", types=INSPECTION_TYPES, counts=counts)
+    return render_template("index.html", types=INSPECTION_TYPES, counts=counts, pq=_project_query())
 
 
 # ── 点検報告：新規作成 ───────────────────────────────────────────
@@ -1045,7 +1055,7 @@ def new_report(category):
         if not subtype or subtype not in info["subtypes"]:
             if request.method == "POST":
                 abort(400)
-            return render_template("select_subtype.html", category=category, info=info)
+            return render_template("select_subtype.html", category=category, info=info, pq=_project_query())
         subtype_info = info["subtypes"][subtype]
         checklist = subtype_info["checklist"]
         subtype_label = subtype_info["label"]
@@ -1220,7 +1230,7 @@ def reports_list(category):
             label = f"{month}月 {period}" if month else "対象期間未設定"
             groups.append({"label": label, "reports": group_reports})
 
-    return render_template("reports.html", category=category, info=info, reports=reports, groups=groups)
+    return render_template("reports.html", category=category, info=info, reports=reports, groups=groups, pq=_project_query())
 
 
 # ── 点検報告：詳細・上司確認 ──────────────────────────────────────

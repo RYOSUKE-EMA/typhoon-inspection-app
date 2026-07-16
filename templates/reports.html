@@ -2,10 +2,13 @@
 {% block content %}
 <div class="card">
   <h2>{{ info.icon }} {{ info.label }} 一覧</h2>
+  {% if pq and pq.project_name %}
+  <p style="margin:0 0 10px;color:#2563eb;font-weight:600;">対象工事：{{ pq.project_name }}{% if pq.project_no %}（{{ pq.project_no }}）{% endif %}</p>
+  {% endif %}
   <div class="flex" style="margin-bottom:14px;">
-    <a class="btn btn-primary" href="{{ url_for('new_report', category=category) }}">＋ 新規作成</a>
+    <a class="btn btn-primary" href="{{ url_for('new_report', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">＋ 新規作成</a>
     <a class="btn btn-secondary" href="{{ url_for('resources_list', category=category) }}">📚 資料集</a>
-    <a class="btn btn-secondary" href="{{ url_for('index') }}">トップに戻る</a>
+    <a class="btn btn-secondary" href="{{ url_for('index') }}{% if pq %}?{{ pq|urlencode }}{% endif %}">トップに戻る</a>
   </div>
   {% if groups is not none %}
     {% if groups %}

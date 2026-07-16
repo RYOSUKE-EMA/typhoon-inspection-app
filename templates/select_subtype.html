@@ -5,13 +5,13 @@
   <p class="footer-note">点検する足場の種類を選択してください。</p>
   <div class="menu-grid" style="margin-top:14px;">
     {% for key, sub in info.subtypes.items() %}
-    <a class="menu-card" href="{{ url_for('new_report', category=category, subtype=key) }}">
+    <a class="menu-card" href="{{ url_for('new_report', category=category, subtype=key) }}{% if pq %}&{{ pq|urlencode }}{% endif %}">
       <div class="title">{{ sub.label }}</div>
     </a>
     {% endfor %}
   </div>
   <div class="flex" style="margin-top:20px;">
-    <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}">一覧に戻る</a>
+    <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">一覧に戻る</a>
   </div>
 </div>
 {% endblock %}
