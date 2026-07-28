@@ -772,7 +772,10 @@ SCAFFOLD_SUBTYPES = {
     },
 }
 
-RESULT_OPTIONS_DEFAULT = ["－", "対応済", "該当なし"]
+RESULT_OPTIONS_DEFAULT = ["○", "×", "－"]
+
+# 点検結果の凡例（全点検共通）
+RESULT_LEGEND = "○…異常なし　×…不備あり　－…該当なし　（不備ありの場合は備考欄に処置内容を記載）"
 
 # ── 点検種別ごとのチェック項目 ──────────────────────────────────────
 INSPECTION_TYPES = {
@@ -780,7 +783,7 @@ INSPECTION_TYPES = {
         "label": "安全旬報",
         "icon": "🦺",
         "desc": "現場の安全・環境管理状況を定期的に点検します（建築・マンション工事用旬報対応）",
-        "result_options": ["○", "△", "×", "－"],
+        "result_options": ["○", "×", "－"],
         "checklist": [
             "危険個所の防護と標識の表示(仮囲い,架空線ﾊﾞﾘｹｰﾄﾞ,安全標識,夜間照明,赤灯等)",
             "路面の整正,路上の残材整備,飛来落下対策(排水,防塵,隣地道路への残材落下防止等)",
@@ -1125,7 +1128,7 @@ def new_report(category):
     }
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
-                           current_month=current_month, prefill=prefill)
+                           current_month=current_month, prefill=prefill, legend=RESULT_LEGEND)
 
 
 # ── 点検報告：編集 ───────────────────────────────────────────────
@@ -1194,7 +1197,7 @@ def edit_report(category, report_id):
 
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
-                           current_month=current_month, edit=report, edit_items=items)
+                           current_month=current_month, edit=report, edit_items=items, legend=RESULT_LEGEND)
 
 
 # ── 点検報告：一覧 ───────────────────────────────────────────────
@@ -1210,8 +1213,8 @@ def reports_list(category):
     finally:
         conn.close()
 
-    groups = None
     if category == "safety_patrol":
+        # 旬報：対象月＋旬でグループ化
         grouped = {}
         for r in reports:
             key = (r["report_month"] or "", r["report_period"] or "")
@@ -1229,6 +1232,20 @@ def reports_list(category):
         for (month, period), group_reports in sorted(grouped.items(), key=lambda kv: sort_key(kv[0])):
             label = f"{month}月 {period}" if month else "対象期間未設定"
             groups.append({"label": label, "reports": group_reports})
+    else:
+        # その他の点検：点検日の年月でグループ化
+        grouped = {}
+        for r in reports:
+            ym = (r["inspect_datetime"] or "")[:7]  # YYYY-MM
+            grouped.setdefault(ym, []).append(r)
+
+        groups = []
+        for ym, group_reports in sorted(grouped.items(), key=lambda kv: kv[0], reverse=True):
+            if ym and len(ym) == 7:
+                label = f"{ym[:4]}年{int(ym[5:7])}月"
+            else:
+                label = "点検日未設定"
+            groups.append({"label": label, "reports": group_reports})
 
     return render_template("reports.html", category=category, info=info, reports=reports, groups=groups, pq=_project_query())
 
@@ -1245,7 +1262,7 @@ def report_detail(category, report_id):
         items = fetchall(db_execute(conn, "SELECT * FROM report_items WHERE report_id=? ORDER BY sort_order", (report_id,)))
     finally:
         conn.close()
-    return render_template("report_detail.html", category=category, info=info, report=report, items=items)
+    return render_template("report_detail.html", category=category, info=info, report=report, items=items, legend=RESULT_LEGEND)
 
 
 @app.route("/reports/<category>/<int:report_id>/pdf")

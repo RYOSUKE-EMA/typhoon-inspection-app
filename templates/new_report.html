@@ -2,8 +2,8 @@
 {% block content %}
 {% set pf = prefill|default({}) %}
 <div class="card">
-  <h2>{{ info.icon }} {{ info.label }}{% if subtype_label %}（{{ subtype_label }}）{% endif %}{% if edit %}（編集）{% else %}（新規作成）{% endif %}</h2>
-  <form method="post">
+  <h2><span class="accent-bar"></span>{{ info.label }}{% if subtype_label %}（{{ subtype_label }}）{% endif %}{% if edit %}（編集）{% else %}（新規作成）{% endif %}</h2>
+  <form method="post" data-lock>
     {% if subtype %}<input type="hidden" name="subtype" value="{{ subtype }}">{% endif %}
     <div class="flex">
       <div class="form-row" style="flex:2; min-width:220px;">
@@ -55,7 +55,7 @@
       </div>
     </div>
 
-    <h2 style="margin-top:24px;">災害防止協議会及び教育</h2>
+    <h2 style="margin-top:24px;"><span class="accent-bar"></span>災害防止協議会及び教育</h2>
     <div class="flex">
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>実施日</label>
@@ -72,10 +72,11 @@
     </div>
     {% endif %}
 
-    <h2 style="margin-top:24px;">点検項目</h2>
+    <h2 style="margin-top:24px;"><span class="accent-bar"></span>点検項目</h2>
+    {% if legend %}<div class="legend">{{ legend }}</div>{% endif %}
     <table class="item-table">
       <thead>
-        <tr><th style="width:40px;">No</th><th>点検項目</th><th style="width:130px;">点検結果</th><th>備考</th></tr>
+        <tr><th style="width:42px;">No</th><th>点検項目</th><th style="width:120px;">点検結果</th><th>備考</th></tr>
       </thead>
       <tbody>
         {% for item in checklist %}
@@ -83,11 +84,14 @@
           <td class="no">{{ loop.index }}</td>
           <td>{{ item }}</td>
           <td>
+            {% set current_result = edit_items[loop.index0].result if edit_items else '' %}
             <select name="result_{{ loop.index0 }}">
-              {% set current_result = edit_items[loop.index0].result if edit_items else '' %}
               {% for opt in options %}
               <option value="{{ opt }}" {% if current_result == opt %}selected{% endif %}>{{ opt }}</option>
               {% endfor %}
+              {% if current_result and current_result not in options %}
+              <option value="{{ current_result }}" selected>{{ current_result }}</option>
+              {% endif %}
             </select>
           </td>
           <td><input type="text" name="note_{{ loop.index0 }}" placeholder="必要に応じて記入" value="{{ edit_items[loop.index0].note if edit_items else '' }}"></td>

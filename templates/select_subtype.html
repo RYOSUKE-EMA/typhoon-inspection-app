@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2>{{ info.icon }} {{ info.label }}（新規作成）</h2>
+  <h2><span class="accent-bar"></span>{{ info.label }}（新規作成）</h2>
   <p class="footer-note">点検する足場の種類を選択してください。</p>
   <div class="menu-grid" style="margin-top:14px;">
     {% for key, sub in info.subtypes.items() %}

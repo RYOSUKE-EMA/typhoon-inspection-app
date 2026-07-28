@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2>{{ info.icon }} {{ info.label }} 資料集</h2>
+  <h2><span class="accent-bar"></span>{{ info.label }} 資料集</h2>
   <p class="footer-note">{{ info.label }}に関する参考例・手順書・チェックリストなどを共有できます。</p>
   {% if resources %}
   <table style="margin-top:14px;">
@@ -40,7 +40,7 @@
 </div>
 
 <div class="card">
-  <h2>資料を追加</h2>
+  <h2><span class="accent-bar"></span>資料を追加</h2>
   <form method="post" action="{{ url_for('upload_resource', category=category) }}" enctype="multipart/form-data">
     <div class="form-row">
       <label>タイトル</label>

@@ -4,67 +4,272 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>現場点検システム</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --accent: #b3382c;
+    --accent-dark: #8f2c22;
+    --ink: #1f2427;
+    --ink-soft: #5b656b;
+    --line: #d9dee1;
+    --line-soft: #e8ecee;
+    --bg: #eef1f3;
+    --panel: #ffffff;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Meiryo", "メイリオ", sans-serif; background: #f0f4f8; color: #333; }
-  header { background: #c0392b; color: white; padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  header h1 { font-size: 1.2rem; }
-  header a { color: #f5d5d0; text-decoration: none; font-size: 0.9rem; }
-  header a:hover { color: white; }
-  .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-  .card { background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 24px; margin-bottom: 20px; }
-  h2 { color: #c0392b; font-size: 1.1rem; margin-bottom: 16px; border-bottom: 2px solid #c0392b; padding-bottom: 8px; }
-  .btn { display: inline-block; padding: 8px 18px; border-radius: 5px; border: none; cursor: pointer; font-size: 0.9rem; text-decoration: none; }
-  .btn-primary { background: #c0392b; color: white; }
-  .btn-primary:hover { background: #a3291d; }
-  .btn-success { background: #1e8449; color: white; }
-  .btn-success:hover { background: #196f3d; }
-  .btn-secondary { background: #7f8c8d; color: white; }
-  .btn-secondary:hover { background: #626567; }
-  .btn-danger { background: #b03a2e; color: white; }
-  .btn-danger:hover { background: #922b21; }
-  .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
-  input[type=text], input[type=datetime-local], textarea, select {
-    border: 1px solid #ccc; border-radius: 4px; padding: 6px 10px; font-size: 0.9rem; width: 100%;
+  body {
+    font-family: "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 2px solid var(--accent);
+    padding: 14px 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+  }
+  header h1 span { color: var(--accent); }
+  header a { color: var(--ink-soft); text-decoration: none; font-size: 0.85rem; }
+  header a:hover { color: var(--accent); }
+  .container { max-width: 1120px; margin: 26px auto; padding: 0 18px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 26px;
+    margin-bottom: 20px;
+  }
+  h2 {
+    color: var(--ink);
+    font-size: 1.08rem;
+    font-weight: 700;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+    letter-spacing: 0.02em;
+  }
+  h2 .accent-bar {
+    display: inline-block;
+    width: 4px;
+    height: 1em;
+    background: var(--accent);
+    margin-right: 10px;
+    transform: translateY(2px);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 20px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-success { background: #1e7d47; color: #fff; }
+  .btn-success:hover { background: #17633799; }
+  .btn-secondary { background: #fff; color: var(--ink); border-color: var(--line); }
+  .btn-secondary:hover { border-color: var(--ink-soft); }
+  .btn-danger { background: #fff; color: var(--accent); border-color: var(--accent); }
+  .btn-danger:hover { background: var(--accent); color: #fff; }
+  .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+  input[type=text], input[type=date], input[type=datetime-local], input[type=number], textarea, select {
+    font-family: inherit;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 8px 11px;
+    font-size: 0.9rem;
+    width: 100%;
+    background: #fff;
+    color: var(--ink);
   }
   input[type=file] { font-size: 0.9rem; }
-  input:focus, textarea:focus, select:focus { outline: none; border-color: #c0392b; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(179,56,44,0.12); }
   table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-  th { background: #c0392b; color: white; padding: 8px 6px; text-align: center; }
-  td { padding: 8px 6px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
-  tr:hover td { background: #fdf0ee; }
-  .list-table th, .list-table td { border-right: 1px solid #ccc; }
+  th {
+    background: #f4f6f7;
+    color: var(--ink-soft);
+    font-weight: 700;
+    padding: 9px 8px;
+    text-align: center;
+    border-bottom: 2px solid var(--line);
+    font-size: 0.82rem;
+    letter-spacing: 0.02em;
+  }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+  tr:hover td { background: #faf6f5; }
+  .list-table th, .list-table td { border-right: 1px solid var(--line-soft); }
   .list-table th:last-child, .list-table td:last-child { border-right: none; }
   .list-table .col-no { width: 110px; }
   .flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .alert { padding: 10px 14px; border-radius: 5px; margin-bottom: 14px; }
-  .alert-info { background: #fdebd0; border-left: 4px solid #c0392b; }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; color: white; }
-  .badge-pending { background: #d35400; }
-  .badge-done { background: #1e8449; }
-  .menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-  .menu-card { display: block; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 28px 20px; text-align: center; text-decoration: none; color: #333; transition: transform 0.1s; position: relative; }
-  .menu-card:hover { transform: translateY(-3px); box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
-  .menu-card .icon { font-size: 2.4rem; display: block; margin-bottom: 10px; }
-  .menu-card .title { font-size: 1.05rem; font-weight: bold; color: #c0392b; }
-  .menu-card .desc { font-size: 0.85rem; color: #666; margin-top: 6px; }
-  .menu-card .pending-badge { position: absolute; top: 10px; right: 10px; }
-  label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 4px; }
-  .form-row { margin-bottom: 14px; }
+  .alert { padding: 11px 15px; border-radius: 3px; margin-bottom: 15px; }
+  .alert-info { background: #fbeeec; border-left: 3px solid var(--accent); color: var(--ink); }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 2px;
+    font-size: 0.76rem;
+    font-weight: 500;
+    border: 1px solid;
+  }
+  .badge-pending { background: #fff5ea; color: #b5670c; border-color: #e6b877; }
+  .badge-done { background: #eef7f1; color: #1e7d47; border-color: #9dccb0; }
+  .menu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+  .menu-card {
+    display: block;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 26px 22px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.12s, transform 0.12s;
+    position: relative;
+    border-left: 3px solid var(--accent);
+  }
+  .menu-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .menu-card .icon { font-size: 1.7rem; display: block; margin-bottom: 10px; }
+  .menu-card .title { font-size: 1.02rem; font-weight: 700; color: var(--ink); }
+  .menu-card .desc { font-size: 0.83rem; color: var(--ink-soft); margin-top: 6px; line-height: 1.5; }
+  .menu-card .pending-badge { position: absolute; top: 12px; right: 12px; }
+  label { display: block; font-size: 0.82rem; color: var(--ink-soft); margin-bottom: 5px; font-weight: 500; }
+  .form-row { margin-bottom: 15px; }
   .item-table th, .item-table td { text-align: left; }
-  .item-table td.no { text-align: center; width: 40px; color: #888; }
-  .item-table select { width: auto; min-width: 110px; }
-  .footer-note { font-size: 0.8rem; color: #888; margin-top: 8px; }
+  .item-table td.no { text-align: center; width: 42px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .item-table select { width: auto; min-width: 104px; }
+  .item-table tbody tr:hover td { background: #faf6f5; }
+  .footer-note { font-size: 0.82rem; color: var(--ink-soft); margin-top: 8px; }
+  /* 点検結果の凡例 */
+  .legend {
+    background: #f7f9fa;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: 11px 15px;
+    margin-bottom: 16px;
+    font-size: 0.86rem;
+    color: var(--ink);
+    letter-spacing: 0.01em;
+  }
+  /* 検索・フィルタ欄 */
+  .filter-bar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: #f7f9fa;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+  }
+  .filter-bar input, .filter-bar select { width: auto; }
+  .filter-bar .search-input { min-width: 240px; flex: 1; }
+  .filter-bar .filter-label { font-size: 0.82rem; color: var(--ink-soft); font-weight: 500; }
+  .no-match-msg { color: var(--ink-soft); font-size: 0.9rem; padding: 10px 2px; }
+  details.month-group { border: 1px solid var(--line); border-radius: 4px; margin-bottom: 10px; overflow: hidden; }
+  details.month-group > summary {
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 0.98rem;
+    padding: 12px 16px;
+    background: #f4f6f7;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  details.month-group > summary::-webkit-details-marker { display: none; }
+  details.month-group > summary::before {
+    content: "▸";
+    color: var(--accent);
+    font-size: 0.8rem;
+    transition: transform 0.12s;
+  }
+  details.month-group[open] > summary::before { transform: rotate(90deg); }
+  details.month-group .group-count { color: var(--ink-soft); font-weight: 500; font-size: 0.85rem; }
+  details.month-group table { padding: 0; }
+  details.month-group .table-wrap { padding: 6px 12px 12px; }
+  /* 送信中オーバーレイ */
+  #submit-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(31,36,39,0.72);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+  }
+  #submit-overlay.show { display: flex; }
+  #submit-overlay .box {
+    background: #fff;
+    border-radius: 6px;
+    padding: 40px 56px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  }
+  #submit-overlay .spinner {
+    width: 52px;
+    height: 52px;
+    border: 5px solid var(--line);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    margin: 0 auto 20px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #submit-overlay .msg { font-size: 1.4rem; font-weight: 700; color: var(--ink); letter-spacing: 0.05em; }
+  #submit-overlay .sub { font-size: 0.9rem; color: var(--ink-soft); margin-top: 10px; }
 </style>
 {% block extra_style %}{% endblock %}
 </head>
 <body>
 <header>
-  <h1>🏗 現場点検システム</h1>
+  <h1><span>■</span> 現場点検システム</h1>
   <a href="{{ url_for('index') }}">トップ</a>
 </header>
 <div class="container">
   {% block content %}{% endblock %}
 </div>
+
+<div id="submit-overlay">
+  <div class="box">
+    <div class="spinner"></div>
+    <div class="msg">送信中...</div>
+    <div class="sub">画面が切り替わるまでお待ちください</div>
+  </div>
+</div>
+
+<script>
+// 送信ロック：data-lock付きフォームの送信時にオーバーレイを出し、二重送信を防ぐ
+document.addEventListener("submit", function (e) {
+  var form = e.target;
+  if (!form.hasAttribute("data-lock")) return;
+  if (form.dataset.submitted === "1") { e.preventDefault(); return; }
+  form.dataset.submitted = "1";
+  document.getElementById("submit-overlay").classList.add("show");
+  form.querySelectorAll("button[type=submit]").forEach(function (b) { b.disabled = true; });
+});
+</script>
 </body>
 </html>

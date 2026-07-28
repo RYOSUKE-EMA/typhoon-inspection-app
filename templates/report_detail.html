@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="card">
-  <h2>{{ info.icon }} {{ info.label }} 詳細</h2>
+  <h2><span class="accent-bar"></span>{{ info.label }} 詳細</h2>
   <table style="margin-bottom:20px;">
     <tr><th style="width:160px;">工事名</th><td>{{ report.project_name }}</td></tr>
     <tr><th>工事ナンバー</th><td>{{ report.project_no }}</td></tr>
@@ -24,17 +24,18 @@
     </td></tr>
   </table>
 
-  <h2>点検項目</h2>
+  <h2><span class="accent-bar"></span>点検項目</h2>
+  {% if legend %}<div class="legend">{{ legend }}</div>{% endif %}
   <table class="item-table">
     <thead>
-      <tr><th style="width:40px;">No</th><th>点検項目</th><th style="width:110px;">点検結果</th><th>備考</th></tr>
+      <tr><th style="width:42px;">No</th><th>点検項目</th><th style="width:100px;">点検結果</th><th>備考</th></tr>
     </thead>
     <tbody>
       {% for item in items %}
       <tr>
         <td class="no">{{ loop.index }}</td>
         <td>{{ item.item_name }}</td>
-        <td>{{ item.result }}</td>
+        <td style="text-align:center; font-weight:700;">{{ item.result }}</td>
         <td>{{ item.note }}</td>
       </tr>
       {% endfor %}
@@ -44,7 +45,7 @@
 
 {% if category == 'safety_patrol' %}
 <div class="card">
-  <h2>災害防止協議会及び教育</h2>
+  <h2><span class="accent-bar"></span>災害防止協議会及び教育</h2>
   <table>
     <tr><th style="width:160px;">実施日</th><td>{{ report.meeting_date or "" }}</td></tr>
     <tr><th>参加者名</th><td>{{ report.meeting_attendees or "" }}</td></tr>
@@ -54,7 +55,7 @@
 {% endif %}
 
 <div class="card">
-  <h2>上司確認欄</h2>
+  <h2><span class="accent-bar"></span>上司確認欄</h2>
   {% if report.status == '確認済' %}
     <table>
       <tr><th style="width:160px;">確認者</th><td>{{ report.approver_name }}</td></tr>
@@ -62,7 +63,7 @@
       <tr><th>コメント</th><td>{{ report.approver_comment or "" }}</td></tr>
     </table>
   {% else %}
-    <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}">
+    <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}" data-lock>
       <div class="form-row">
         <label>確認者名</label>
         <input type="text" name="approver_name" required>
@@ -77,7 +78,7 @@
 </div>
 
 {% if request.args.get('delete_error') %}
-<p style="color:#b03a2e; font-weight:bold;">パスワードが正しくないため削除できませんでした。</p>
+<p style="color:#b3382c; font-weight:700;">パスワードが正しくないため削除できませんでした。</p>
 {% endif %}
 <div class="flex">
   <a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">一覧に戻る</a>
@@ -91,7 +92,7 @@
 
 <script>
 function confirmDelete(form) {
-  if (!confirm('この旬報を削除しますか？この操作は取り消せません。')) {
+  if (!confirm('この報告書を削除しますか？この操作は取り消せません。')) {
     return false;
   }
   var pw = prompt('削除用パスワードを入力してください');
