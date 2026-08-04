@@ -5,6 +5,7 @@
   <div class="flex" style="margin-bottom:14px;">
     <a class="btn btn-primary" href="{{ url_for('new_report', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">＋ 新規作成</a>
     <a class="btn btn-secondary" href="{{ url_for('resources_list', category=category) }}">資料集</a>
+    <a class="btn btn-secondary" href="{{ url_for('guides_edit', category=category) }}">項目の手引き編集</a>
     <a class="btn btn-secondary" href="{{ url_for('index') }}">トップに戻る</a>
   </div>
 

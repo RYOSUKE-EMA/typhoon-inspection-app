@@ -34,7 +34,7 @@
       {% for item in items %}
       <tr>
         <td class="no">{{ loop.index }}</td>
-        <td>{{ item.item_name }}</td>
+        <td>{{ item.item_name }}{% if guide_names and item.item_name in guide_names %}<button type="button" class="guide-link" data-category="{{ category }}" data-subtype="{{ report.subtype or '' }}" data-item="{{ item.item_name }}">解説</button>{% endif %}</td>
         <td style="text-align:center; font-weight:700;">{{ item.result }}</td>
         <td>{{ item.note }}</td>
       </tr>

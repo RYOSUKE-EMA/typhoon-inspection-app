@@ -82,7 +82,7 @@
         {% for item in checklist %}
         <tr>
           <td class="no">{{ loop.index }}</td>
-          <td>{{ item }}</td>
+          <td>{{ item }}{% if guide_names and item in guide_names %}<button type="button" class="guide-link" data-category="{{ category }}" data-subtype="{{ subtype or '' }}" data-item="{{ item }}">解説</button>{% endif %}</td>
           <td>
             {% set current_result = edit_items[loop.index0].result if edit_items else '' %}
             <select name="result_{{ loop.index0 }}">

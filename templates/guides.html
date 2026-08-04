@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2><span class="accent-bar"></span>{{ info.label }} 項目の手引き編集{% if subtype_label %}（{{ subtype_label }}）{% endif %}</h2>
+  <p class="footer-note">各点検項目に参考画像と説明文を登録できます。登録すると、点検入力・詳細画面の項目に「解説」ボタンが表示されます。</p>
+
+  {% if subtypes %}
+  <div class="filter-bar" style="margin-top:14px;">
+    <span class="filter-label">足場の種類</span>
+    {% for key, sub in subtypes.items() %}
+    <a class="btn btn-sm {% if key == subtype %}btn-primary{% else %}btn-secondary{% endif %}"
+       href="{{ url_for('guides_edit', category=category, subtype=key) }}">{{ sub.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="flex" style="margin:14px 0;">
+    <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}">一覧に戻る</a>
+  </div>
+</div>
+
+{% for item in checklist %}
+{% set g = guides.get(item) %}
+<div class="card">
+  <form method="post" action="{{ url_for('guides_save', category=category) }}" enctype="multipart/form-data" data-lock>
+    <input type="hidden" name="subtype" value="{{ subtype }}">
+    <input type="hidden" name="item_name" value="{{ item }}">
+    <div style="font-weight:700; margin-bottom:12px;">{{ loop.index }}. {{ item }}</div>
+
+    <div class="flex" style="align-items:flex-start;">
+      <div style="flex:1; min-width:220px;">
+        {% if g and g.has_image %}
+        <div class="form-row">
+          <label>登録済みの画像</label>
+          <img src="{{ url_for('guide_image', guide_id=g.guide_id) }}" alt="参考画像"
+               style="max-width:220px; max-height:220px; border:1px solid var(--line); border-radius:4px; display:block;">
+          <label style="margin-top:8px; font-weight:400;">
+            <input type="checkbox" name="remove_image" value="1" style="width:auto;"> この画像を削除する
+          </label>
+        </div>
+        {% endif %}
+        <div class="form-row">
+          <label>参考画像{% if g and g.has_image %}（差し替える場合のみ選択）{% endif %}</label>
+          <input type="file" name="image" accept="image/*">
+        </div>
+      </div>
+      <div style="flex:2; min-width:260px;">
+        <div class="form-row">
+          <label>説明文</label>
+          <textarea name="description" rows="5" placeholder="点検のポイント・判断基準・是正例などを記入">{{ g.description if g else '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">この項目を保存</button>
+  </form>
+</div>
+{% endfor %}
+
+<div class="flex">
+  <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}">一覧に戻る</a>
+</div>
+{% endblock %}
