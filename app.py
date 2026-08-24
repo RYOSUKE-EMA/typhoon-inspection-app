@@ -975,6 +975,20 @@ def init_db():
                 updated_at TEXT,
                 UNIQUE (category, subtype, item_name)
             )""")
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS guide_images (
+                id SERIAL PRIMARY KEY,
+                guide_id INTEGER NOT NULL REFERENCES item_guides(id) ON DELETE CASCADE,
+                image_data BYTEA NOT NULL,
+                image_mimetype TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )""")
+            # 旧単一画像を複数画像テーブルへ移行（冪等）
+            cur.execute("SELECT id, image_data, image_mimetype FROM item_guides WHERE image_mimetype IS NOT NULL")
+            for r in cur.fetchall():
+                cur.execute("INSERT INTO guide_images (guide_id, image_data, image_mimetype, sort_order) VALUES (%s,%s,%s,0)",
+                            (r[0], r[1], r[2]))
+                cur.execute("UPDATE item_guides SET image_data=NULL, image_mimetype=NULL WHERE id=%s", (r[0],))
             conn.commit()
         else:
             conn.executescript("""
@@ -1021,7 +1035,18 @@ def init_db():
                 updated_at TEXT,
                 UNIQUE (category, subtype, item_name)
             );
+            CREATE TABLE IF NOT EXISTS guide_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guide_id INTEGER NOT NULL,
+                image_data BLOB NOT NULL,
+                image_mimetype TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
             """)
+            for r in conn.execute("SELECT id, image_data, image_mimetype FROM item_guides WHERE image_mimetype IS NOT NULL").fetchall():
+                conn.execute("INSERT INTO guide_images (guide_id, image_data, image_mimetype, sort_order) VALUES (?,?,?,0)",
+                             (r[0], r[1], r[2]))
+                conn.execute("UPDATE item_guides SET image_data=NULL, image_mimetype=NULL WHERE id=?", (r[0],))
             cols = [r[1] for r in conn.execute("PRAGMA table_info(reports)").fetchall()]
             if "category" not in cols:
                 conn.execute("ALTER TABLE reports ADD COLUMN category TEXT NOT NULL DEFAULT 'typhoon'")
@@ -1152,7 +1177,7 @@ def new_report(category):
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, prefill=prefill, legend=RESULT_LEGEND,
-                           guide_names=set(_guides_map(category, subtype).keys()))
+                           guide_names=_guide_item_names(category, subtype))
 
 
 # ── 点検報告：編集 ───────────────────────────────────────────────
@@ -1222,7 +1247,7 @@ def edit_report(category, report_id):
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, edit=report, edit_items=items, legend=RESULT_LEGEND,
-                           guide_names=set(_guides_map(category, subtype or "").keys()))
+                           guide_names=_guide_item_names(category, subtype or ""))
 
 
 # ── 点検報告：一覧 ───────────────────────────────────────────────
@@ -1288,7 +1313,7 @@ def report_detail(category, report_id):
     finally:
         conn.close()
     return render_template("report_detail.html", category=category, info=info, report=report, items=items, legend=RESULT_LEGEND,
-                           guide_names=set(_guides_map(category, report["subtype"] or "").keys()))
+                           guide_names=_guide_item_names(category, report["subtype"] or ""))
 
 
 @app.route("/reports/<category>/<int:report_id>/pdf")
@@ -1602,23 +1627,37 @@ def _checklist_for(info, subtype):
     return info["checklist"]
 
 
+def _guide_image_ids(conn, guide_id):
+    rows = fetchall(db_execute(conn,
+        "SELECT id FROM guide_images WHERE guide_id=? ORDER BY sort_order, id", (guide_id,)))
+    return [r["id"] for r in rows]
+
+
 def _guides_map(category, subtype):
-    """{item_name: {description, has_image, guide_id}} を返す。"""
+    """{item_name: {description, image_ids, guide_id, has_content}} を返す。"""
     conn = get_db()
     try:
         rows = fetchall(db_execute(conn,
-            "SELECT id, item_name, description, image_mimetype FROM item_guides WHERE category=? AND subtype=?",
+            "SELECT id, item_name, description FROM item_guides WHERE category=? AND subtype=?",
             (category, subtype or "")))
+        result = {}
+        for r in rows:
+            image_ids = _guide_image_ids(conn, r["id"])
+            desc = r["description"] or ""
+            result[r["item_name"]] = {
+                "description": desc,
+                "image_ids": image_ids,
+                "guide_id": r["id"],
+                "has_content": bool(desc or image_ids),
+            }
     finally:
         conn.close()
-    result = {}
-    for r in rows:
-        result[r["item_name"]] = {
-            "description": r["description"] or "",
-            "has_image": bool(r["image_mimetype"]),
-            "guide_id": r["id"],
-        }
     return result
+
+
+def _guide_item_names(category, subtype):
+    """説明文か画像が1つでもある項目名の集合を返す。"""
+    return {name for name, g in _guides_map(category, subtype).items() if g["has_content"]}
 
 
 @app.route("/guides/<category>")
@@ -1638,6 +1677,30 @@ def guides_edit(category):
                            guides=guides, subtypes=subtypes, subtype=subtype, subtype_label=subtype_label)
 
 
+def _get_or_create_guide(conn, category, subtype, item_name):
+    existing = fetchone(db_execute(conn,
+        "SELECT id FROM item_guides WHERE category=? AND subtype=? AND item_name=?",
+        (category, subtype, item_name)))
+    if existing:
+        return existing["id"]
+    now = datetime.now().isoformat(timespec="seconds")
+    db_execute(conn, """
+        INSERT INTO item_guides (category, subtype, item_name, description, updated_at)
+        VALUES (?,?,?,?,?)
+    """, (category, subtype, item_name, "", now))
+    if USE_PG:
+        return fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
+    return fetchone(db_execute(conn, "SELECT MAX(id) AS id FROM item_guides"))["id"]
+
+
+def _add_guide_image(conn, guide_id, data, mimetype):
+    order_row = fetchone(db_execute(conn, "SELECT COALESCE(MAX(sort_order), -1) AS m FROM guide_images WHERE guide_id=?", (guide_id,)))
+    nxt = (order_row["m"] if order_row and order_row["m"] is not None else -1) + 1
+    blob = psycopg2.Binary(data) if USE_PG else sqlite3.Binary(data)
+    db_execute(conn, "INSERT INTO guide_images (guide_id, image_data, image_mimetype, sort_order) VALUES (?,?,?,?)",
+               (guide_id, blob, mimetype, nxt))
+
+
 @app.route("/guides/<category>/save", methods=["POST"])
 def guides_save(category):
     get_inspection_type(category)
@@ -1645,37 +1708,20 @@ def guides_save(category):
     subtype = f.get("subtype", "").strip()
     item_name = f.get("item_name", "").strip()
     description = f.get("description", "").strip()
-    remove_image = f.get("remove_image") == "1"
-    file = request.files.get("image")
-
-    new_image = None
-    new_mimetype = None
-    if file and file.filename:
-        new_image = file.read()
-        new_mimetype = file.mimetype or mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
+    files = request.files.getlist("images")
 
     conn = get_db()
     try:
-        existing = fetchone(db_execute(conn,
-            "SELECT id FROM item_guides WHERE category=? AND subtype=? AND item_name=?",
-            (category, subtype, item_name)))
+        gid = _get_or_create_guide(conn, category, subtype, item_name)
         now = datetime.now().isoformat(timespec="seconds")
-        if existing:
-            gid = existing["id"]
-            db_execute(conn, "UPDATE item_guides SET description=?, updated_at=? WHERE id=?",
-                       (description, now, gid))
-            if new_image is not None:
-                db_execute(conn, "UPDATE item_guides SET image_data=?, image_mimetype=? WHERE id=?",
-                           (psycopg2.Binary(new_image) if USE_PG else sqlite3.Binary(new_image), new_mimetype, gid))
-            elif remove_image:
-                db_execute(conn, "UPDATE item_guides SET image_data=NULL, image_mimetype=NULL WHERE id=?", (gid,))
-        else:
-            db_execute(conn, """
-                INSERT INTO item_guides (category, subtype, item_name, description, image_data, image_mimetype, updated_at)
-                VALUES (?,?,?,?,?,?,?)
-            """, (category, subtype, item_name, description,
-                  (psycopg2.Binary(new_image) if USE_PG else sqlite3.Binary(new_image)) if new_image is not None else None,
-                  new_mimetype, now))
+        db_execute(conn, "UPDATE item_guides SET description=?, updated_at=? WHERE id=?", (description, now, gid))
+        for file in files:
+            if file and file.filename:
+                data = file.read()
+                if not data:
+                    continue
+                mimetype = file.mimetype or mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
+                _add_guide_image(conn, gid, data, mimetype)
         conn.commit()
     finally:
         conn.close()
@@ -1685,14 +1731,29 @@ def guides_save(category):
     return redirect(url_for("guides_edit", category=category))
 
 
-@app.route("/guide-image/<int:guide_id>")
-def guide_image(guide_id):
+@app.route("/guide-image/<int:image_id>/delete", methods=["POST"])
+def guide_image_delete(image_id):
+    category = request.form.get("category", "")
+    subtype = request.form.get("subtype", "")
     conn = get_db()
     try:
-        row = fetchone(db_execute(conn, "SELECT image_data, image_mimetype FROM item_guides WHERE id=?", (guide_id,)))
+        db_execute(conn, "DELETE FROM guide_images WHERE id=?", (image_id,))
+        conn.commit()
     finally:
         conn.close()
-    if not row or not row["image_mimetype"]:
+    if subtype:
+        return redirect(url_for("guides_edit", category=category, subtype=subtype))
+    return redirect(url_for("guides_edit", category=category))
+
+
+@app.route("/guide-image/<int:image_id>")
+def guide_image(image_id):
+    conn = get_db()
+    try:
+        row = fetchone(db_execute(conn, "SELECT image_data, image_mimetype FROM guide_images WHERE id=?", (image_id,)))
+    finally:
+        conn.close()
+    if not row:
         abort(404)
     return send_file(BytesIO(to_bytes(row["image_data"])), mimetype=row["image_mimetype"], as_attachment=False)
 
@@ -1705,16 +1766,17 @@ def api_guide(category):
     conn = get_db()
     try:
         row = fetchone(db_execute(conn,
-            "SELECT id, description, image_mimetype FROM item_guides WHERE category=? AND subtype=? AND item_name=?",
+            "SELECT id, description FROM item_guides WHERE category=? AND subtype=? AND item_name=?",
             (category, subtype, item)))
+        image_ids = _guide_image_ids(conn, row["id"]) if row else []
     finally:
         conn.close()
     if not row:
-        return {"item": item, "description": "", "image_url": None}
+        return {"item": item, "description": "", "image_urls": []}
     return {
         "item": item,
         "description": row["description"] or "",
-        "image_url": url_for("guide_image", guide_id=row["id"]) if row["image_mimetype"] else None,
+        "image_urls": [url_for("guide_image", image_id=i) for i in image_ids],
     }
 
 

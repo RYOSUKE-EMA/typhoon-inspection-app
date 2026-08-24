@@ -331,7 +331,7 @@
       <button type="button" class="g-close" id="guide-close" aria-label="閉じる">×</button>
     </div>
     <div class="g-body">
-      <img class="g-image" id="guide-image" alt="参考画像" style="display:none;">
+      <div id="guide-images"></div>
       <div class="g-desc" id="guide-desc"></div>
       <div class="g-empty" id="guide-empty" style="display:none;">この項目の手引きはまだ登録されていません。</div>
     </div>
@@ -353,7 +353,7 @@ document.addEventListener("submit", function (e) {
 (function () {
   var modal = document.getElementById("guide-modal");
   var titleEl = document.getElementById("guide-title");
-  var imgEl = document.getElementById("guide-image");
+  var imagesEl = document.getElementById("guide-images");
   var descEl = document.getElementById("guide-desc");
   var emptyEl = document.getElementById("guide-empty");
 
@@ -372,8 +372,7 @@ document.addEventListener("submit", function (e) {
     var item = link.dataset.item;
 
     titleEl.textContent = item;
-    imgEl.style.display = "none";
-    imgEl.removeAttribute("src");
+    imagesEl.innerHTML = "";
     descEl.textContent = "読み込み中...";
     emptyEl.style.display = "none";
     modal.classList.add("show");
@@ -382,14 +381,21 @@ document.addEventListener("submit", function (e) {
       + "?subtype=" + encodeURIComponent(subtype)
       + "&item=" + encodeURIComponent(item);
     fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-      if (d.image_url) { imgEl.src = d.image_url; imgEl.style.display = "block"; }
+      var urls = d.image_urls || [];
+      urls.forEach(function (u) {
+        var img = document.createElement("img");
+        img.src = u;
+        img.className = "g-image";
+        img.alt = "参考画像";
+        imagesEl.appendChild(img);
+      });
       if (d.description) {
         descEl.textContent = d.description;
         descEl.style.display = "block";
       } else {
         descEl.style.display = "none";
       }
-      if (!d.image_url && !d.description) { emptyEl.style.display = "block"; }
+      if (urls.length === 0 && !d.description) { emptyEl.style.display = "block"; }
     }).catch(function () {
       descEl.textContent = "読み込みに失敗しました。";
     });

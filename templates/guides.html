@@ -22,26 +22,36 @@
 {% for item in checklist %}
 {% set g = guides.get(item) %}
 <div class="card">
+  <div style="font-weight:700; margin-bottom:12px;">{{ loop.index }}. {{ item }}</div>
+
+  {% if g and g.image_ids %}
+  <div class="form-row">
+    <label>登録済みの参考画像（{{ g.image_ids|length }}枚）</label>
+    <div class="flex" style="align-items:flex-start;">
+      {% for iid in g.image_ids %}
+      <div style="text-align:center;">
+        <img src="{{ url_for('guide_image', image_id=iid) }}" alt="参考画像"
+             style="max-width:150px; max-height:150px; border:1px solid var(--line); border-radius:4px; display:block;">
+        <form method="post" action="{{ url_for('guide_image_delete', image_id=iid) }}" style="margin-top:4px;"
+              onsubmit="return confirm('この画像を削除しますか？');">
+          <input type="hidden" name="category" value="{{ category }}">
+          <input type="hidden" name="subtype" value="{{ subtype }}">
+          <button type="submit" class="btn btn-danger btn-sm">削除</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <form method="post" action="{{ url_for('guides_save', category=category) }}" enctype="multipart/form-data" data-lock>
     <input type="hidden" name="subtype" value="{{ subtype }}">
     <input type="hidden" name="item_name" value="{{ item }}">
-    <div style="font-weight:700; margin-bottom:12px;">{{ loop.index }}. {{ item }}</div>
-
     <div class="flex" style="align-items:flex-start;">
       <div style="flex:1; min-width:220px;">
-        {% if g and g.has_image %}
         <div class="form-row">
-          <label>登録済みの画像</label>
-          <img src="{{ url_for('guide_image', guide_id=g.guide_id) }}" alt="参考画像"
-               style="max-width:220px; max-height:220px; border:1px solid var(--line); border-radius:4px; display:block;">
-          <label style="margin-top:8px; font-weight:400;">
-            <input type="checkbox" name="remove_image" value="1" style="width:auto;"> この画像を削除する
-          </label>
-        </div>
-        {% endif %}
-        <div class="form-row">
-          <label>参考画像{% if g and g.has_image %}（差し替える場合のみ選択）{% endif %}</label>
-          <input type="file" name="image" accept="image/*">
+          <label>参考画像を追加（複数選択可）</label>
+          <input type="file" name="images" accept="image/*" multiple>
         </div>
       </div>
       <div style="flex:2; min-width:260px;">
@@ -51,7 +61,6 @@
         </div>
       </div>
     </div>
-
     <button type="submit" class="btn btn-primary">この項目を保存</button>
   </form>
 </div>
