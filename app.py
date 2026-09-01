@@ -1274,16 +1274,16 @@ def new_report(category):
         conn = get_db()
         try:
             last = fetchone(db_execute(conn, """
-                SELECT project_name, project_no, inspector, site_manager FROM reports
+                SELECT project_name, project_no, site_manager FROM reports
                 WHERE category=? AND submitted_by=? ORDER BY id DESC LIMIT 1
             """, (category, kintone_user)))
         finally:
             conn.close()
         if last:
-            for k in ("project_name", "project_no", "inspector", "site_manager"):
+            for k in ("project_name", "project_no", "site_manager"):
                 if not prefill[k]:
                     prefill[k] = last[k] or ""
-        # 前回提出が無くても、点検者はログインユーザー名で自動入力
+        # 点検者は常にログインユーザー本人を自動入力（URLパラメータ指定があればそちら優先）
         if not prefill["inspector"]:
             prefill["inspector"] = kintone_user
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
