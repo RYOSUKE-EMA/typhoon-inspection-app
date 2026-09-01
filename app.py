@@ -259,6 +259,13 @@ else:
 
 app = Flask(__name__)
 
+
+# kintone（symgrp.cybozu.com）のカスタマイズビューへのiframe埋め込みを許可
+@app.after_request
+def allow_kintone_embed(resp):
+    resp.headers["Content-Security-Policy"] = "frame-ancestors 'self' https://symgrp.cybozu.com"
+    return resp
+
 SQLITE_PATH = os.path.join(os.path.dirname(__file__), "typhoon.db")
 
 # ── 足場点検：種類別チェック項目 ─────────────────────────────────
