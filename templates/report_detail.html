@@ -10,6 +10,11 @@
     {% endif %}
     <tr><th>点検日</th><td>{{ report.inspect_datetime[:10] }}</td></tr>
     <tr><th>点検者</th><td>{{ report.inspector }}</td></tr>
+    {% if category == 'scaffold' %}
+    <tr><th>点検者の資格</th><td>{{ report.inspector_qual or "" }}{% if report.inspector_qual_no %}（資格番号：{{ report.inspector_qual_no }}）{% endif %}</td></tr>
+    <tr><th>組立者</th><td>{{ report.assembler_name or "" }}</td></tr>
+    <tr><th>組立者の資格</th><td>{{ report.assembler_qual or "" }}{% if report.assembler_qual_no %}（資格番号：{{ report.assembler_qual_no }}）{% endif %}</td></tr>
+    {% endif %}
     {% if category == 'safety_patrol' %}
     <tr><th>作業所長</th><td>{{ report.site_manager or "" }}</td></tr>
     <tr><th>対象期間</th><td>{{ report.report_month ~ "月 " ~ report.report_period if report.report_month else "" }}</td></tr>

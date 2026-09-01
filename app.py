@@ -999,6 +999,8 @@ def init_db():
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_attendees TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_notes TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS submitted_by TEXT")
+            for col in ("assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no"):
+                cur.execute(f"ALTER TABLE reports ADD COLUMN IF NOT EXISTS {col} TEXT")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS report_items (
                 id SERIAL PRIMARY KEY,
@@ -1128,7 +1130,8 @@ def init_db():
                 conn.execute("ALTER TABLE reports ADD COLUMN category TEXT NOT NULL DEFAULT 'typhoon'")
             if "subtype" not in cols:
                 conn.execute("ALTER TABLE reports ADD COLUMN subtype TEXT")
-            for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes", "submitted_by"):
+            for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes", "submitted_by",
+                        "assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
             res_cols = [r[1] for r in conn.execute("PRAGMA table_info(resources)").fetchall()]
@@ -1205,6 +1208,11 @@ def new_report(category):
         meeting_attendees = f.get("meeting_attendees", "").strip()
         meeting_notes = f.get("meeting_notes", "").strip()
         submitted_by = f.get("kintone_user", "").strip()
+        assembler_name = f.get("assembler_name", "").strip()
+        assembler_qual = f.get("assembler_qual", "").strip()
+        assembler_qual_no = f.get("assembler_qual_no", "").strip()
+        inspector_qual = f.get("inspector_qual", "").strip()
+        inspector_qual_no = f.get("inspector_qual_no", "").strip()
 
         # 点検結果の未選択チェック（ブラウザのrequiredが第一防衛、これはサーバ側の保険）
         missing = [i + 1 for i in range(len(checklist)) if not f.get(f"result_{i}", "").strip()]
@@ -1218,10 +1226,12 @@ def new_report(category):
         try:
             cur = db_execute(conn, """
                 INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
-                                      site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                      site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
+                                      assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", created_at,
-                  site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by))
+                  site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
+                  assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
             else:
@@ -1313,15 +1323,22 @@ def edit_report(category, report_id):
             meeting_date = f.get("meeting_date", "").strip()
             meeting_attendees = f.get("meeting_attendees", "").strip()
             meeting_notes = f.get("meeting_notes", "").strip()
+            assembler_name = f.get("assembler_name", "").strip()
+            assembler_qual = f.get("assembler_qual", "").strip()
+            assembler_qual_no = f.get("assembler_qual_no", "").strip()
+            inspector_qual = f.get("inspector_qual", "").strip()
+            inspector_qual_no = f.get("inspector_qual_no", "").strip()
 
             db_execute(conn, """
                 UPDATE reports SET project_name=?, project_no=?, inspect_datetime=?, inspector=?,
                     site_manager=?, report_month=?, report_period=?, report_round=?,
-                    meeting_date=?, meeting_attendees=?, meeting_notes=?
+                    meeting_date=?, meeting_attendees=?, meeting_notes=?,
+                    assembler_name=?, assembler_qual=?, assembler_qual_no=?, inspector_qual=?, inspector_qual_no=?
                 WHERE id=?
             """, (project_name, project_no, inspect_datetime, inspector,
                   site_manager, report_month, report_period, report_round,
-                  meeting_date, meeting_attendees, meeting_notes, report_id))
+                  meeting_date, meeting_attendees, meeting_notes,
+                  assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no, report_id))
 
             sync_items = []
             for i, item in enumerate(items):
@@ -1484,6 +1501,15 @@ def report_pdf(category, report_id):
         info_rows.append(["足場の種類", Paragraph(subtype_label, base_style), "状態", Paragraph(status_label, base_style)])
     else:
         info_rows.append(["状態", Paragraph(status_label, base_style), "", ""])
+    if category == "scaffold":
+        def _qual(name, no):
+            text = name or ""
+            if no:
+                text += f"（資格番号：{no}）"
+            return text
+        info_rows.append(["点検者の資格", Paragraph(_qual(report["inspector_qual"], report["inspector_qual_no"]), base_style),
+                          "組立者", Paragraph(report["assembler_name"] or "", base_style)])
+        info_rows.append(["組立者の資格", Paragraph(_qual(report["assembler_qual"], report["assembler_qual_no"]), base_style), "", ""])
     info_table = Table(info_rows, colWidths=[label_w, value_w, label_w, value_w])
     info_table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, -1), "HeiseiKakuGo-W5"),
