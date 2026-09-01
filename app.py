@@ -790,6 +790,7 @@ INSPECTION_TYPES = {
         "label": "安全旬報",
         "icon": "🦺",
         "desc": "現場の安全・環境管理状況を定期的に点検します（建築・マンション工事用旬報対応）",
+        "approval_flow": ["TL"],
         "result_options": ["○", "×", "－"],
         "checklist": [
             "危険個所の防護と標識の表示(仮囲い,架空線ﾊﾞﾘｹｰﾄﾞ,安全標識,夜間照明,赤灯等)",
@@ -857,12 +858,14 @@ INSPECTION_TYPES = {
         "label": "足場点検記録",
         "icon": "🪜",
         "desc": "足場の組立・変更後や強風後等の点検を行います（労働安全衛生規則対応・足場種類別）",
+        "approval_flow": ["TL"],
         "subtypes": SCAFFOLD_SUBTYPES,
     },
     "typhoon": {
         "label": "台風養生点検",
         "icon": "🌀",
         "desc": "台風接近時の養生状況を点検します",
+        "approval_flow": ["TL", "GL・BL"],
         "checklist": [
             "足場の補強・控え（ブレース）の設置状況",
             "足場の養生シート・メッシュシートの撤去または増し締め",
@@ -887,6 +890,7 @@ INSPECTION_TYPES = {
         "label": "災害時現場点検",
         "icon": "⚠",
         "desc": "地震・台風・異常気象時の現場点検を行います（災害時現場点検報告書・地震異常気象時報告書対応）",
+        "approval_flow": ["TL", "GL・BL"],
         "checklist": [
             # 全体
             "工事敷地全体の状況（工事目的物以外も含む）",
@@ -1029,6 +1033,16 @@ def init_db():
                 UNIQUE (category, subtype, item_name)
             )""")
             cur.execute("""
+            CREATE TABLE IF NOT EXISTS approvals (
+                id SERIAL PRIMARY KEY,
+                report_id INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+                step INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                approver_name TEXT NOT NULL,
+                comment TEXT,
+                approved_at TEXT NOT NULL
+            )""")
+            cur.execute("""
             CREATE TABLE IF NOT EXISTS guide_images (
                 id SERIAL PRIMARY KEY,
                 guide_id INTEGER NOT NULL REFERENCES item_guides(id) ON DELETE CASCADE,
@@ -1088,6 +1102,15 @@ def init_db():
                 updated_at TEXT,
                 UNIQUE (category, subtype, item_name)
             );
+            CREATE TABLE IF NOT EXISTS approvals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id INTEGER NOT NULL,
+                step INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                approver_name TEXT NOT NULL,
+                comment TEXT,
+                approved_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS guide_images (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 guide_id INTEGER NOT NULL,
@@ -1141,7 +1164,7 @@ def index():
     try:
         counts = {}
         for category in INSPECTION_TYPES:
-            row = fetchone(db_execute(conn, "SELECT COUNT(*) AS c FROM reports WHERE category=? AND status=?", (category, "未確認")))
+            row = fetchone(db_execute(conn, "SELECT COUNT(*) AS c FROM reports WHERE category=? AND status<>?", (category, "確認済")))
             counts[category] = row["c"]
     finally:
         conn.close()
@@ -1389,10 +1412,13 @@ def report_detail(category, report_id):
         if not report:
             abort(404)
         items = fetchall(db_execute(conn, "SELECT * FROM report_items WHERE report_id=? ORDER BY sort_order", (report_id,)))
+        approvals = fetchall(db_execute(conn, "SELECT * FROM approvals WHERE report_id=? ORDER BY step", (report_id,)))
     finally:
         conn.close()
+    flow = info.get("approval_flow", ["確認"])
     return render_template("report_detail.html", category=category, info=info, report=report, items=items, legend=RESULT_LEGEND,
-                           guide_names=_guide_item_names(category, report["subtype"] or ""))
+                           guide_names=_guide_item_names(category, report["subtype"] or ""),
+                           flow=flow, approvals=approvals)
 
 
 @app.route("/reports/<category>/<int:report_id>/pdf")
@@ -1583,27 +1609,47 @@ def report_pdf(category, report_id):
 
 @app.route("/reports/<category>/<int:report_id>/approve", methods=["POST"])
 def approve_report(category, report_id):
-    get_inspection_type(category)
+    info = get_inspection_type(category)
+    flow = info.get("approval_flow", ["確認"])
     f = request.form
     approver_name = f.get("approver_name", "").strip()
     approver_comment = f.get("approver_comment", "").strip()
+    if not approver_name:
+        return redirect(url_for("report_detail", category=category, report_id=report_id))
 
     conn = get_db()
     try:
         report = fetchone(db_execute(conn, "SELECT * FROM reports WHERE id=? AND category=?", (report_id, category)))
         if not report:
             abort(404)
+        approvals = fetchall(db_execute(conn, "SELECT * FROM approvals WHERE report_id=? ORDER BY step", (report_id,)))
+        next_step = len(approvals)
+        if next_step >= len(flow):
+            return redirect(url_for("report_detail", category=category, report_id=report_id))
+
+        now = datetime.now().isoformat(timespec="seconds")
+        role = flow[next_step]
+        db_execute(conn, """
+            INSERT INTO approvals (report_id, step, role, approver_name, comment, approved_at)
+            VALUES (?,?,?,?,?,?)
+        """, (report_id, next_step, role, approver_name, approver_comment, now))
+
+        if next_step + 1 >= len(flow):
+            new_status = "確認済"
+        else:
+            new_status = f"{flow[next_step + 1]}承認待ち"
+        # 互換のため最終承認者を従来列にも記録
         db_execute(conn, """
             UPDATE reports SET status=?, approver_name=?, approver_comment=?, approved_at=?
             WHERE id=?
-        """, ("確認済", approver_name, approver_comment, datetime.now().isoformat(timespec="seconds"), report_id))
+        """, (new_status, approver_name, approver_comment, now, report_id))
         conn.commit()
         items = fetchall(db_execute(conn, "SELECT * FROM report_items WHERE report_id=? ORDER BY sort_order", (report_id,)))
     finally:
         conn.close()
 
     report = dict(report)
-    report["status"] = "確認済"
+    report["status"] = new_status
     sync_report_to_kintone(report, items)
     return redirect(url_for("report_detail", category=category, report_id=report_id))
 

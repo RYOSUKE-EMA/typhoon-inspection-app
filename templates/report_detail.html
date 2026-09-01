@@ -19,7 +19,7 @@
       {% if report.status == '確認済' %}
       <span class="badge badge-done">確認済</span>
       {% else %}
-      <span class="badge badge-pending">確認待ち</span>
+      <span class="badge badge-pending">{{ report.status if report.status != "未確認" else "TL承認待ち" }}</span>
       {% endif %}
     </td></tr>
   </table>
@@ -55,25 +55,42 @@
 {% endif %}
 
 <div class="card">
-  <h2><span class="accent-bar"></span>上司確認欄</h2>
-  {% if report.status == '確認済' %}
+  <h2><span class="accent-bar"></span>承認欄（{{ flow | join(" → ") }}）</h2>
+  {% if not approvals and report.status == '確認済' %}
+    {# 承認ルート導入前に確認済になった旧レコード #}
     <table>
       <tr><th style="width:160px;">確認者</th><td>{{ report.approver_name }}</td></tr>
-      <tr><th>確認日時</th><td>{{ report.approved_at | replace("T", " ") }}</td></tr>
+      <tr><th>確認日時</th><td>{{ (report.approved_at or "") | replace("T", " ") }}</td></tr>
       <tr><th>コメント</th><td>{{ report.approver_comment or "" }}</td></tr>
     </table>
   {% else %}
-    <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}" data-lock>
-      <div class="form-row">
-        <label>確認者名</label>
-        <input type="text" name="approver_name" required>
-      </div>
-      <div class="form-row">
-        <label>コメント（任意）</label>
-        <textarea name="approver_comment" rows="3"></textarea>
-      </div>
-      <button type="submit" class="btn btn-success">確認済みにする</button>
-    </form>
+    {% for role in flow %}
+    {% set a = approvals[loop.index0] if approvals|length > loop.index0 else None %}
+    <div style="border:1px solid var(--line); border-radius:4px; padding:14px 16px; margin-bottom:12px;">
+      <div style="font-weight:700; margin-bottom:8px;">{{ loop.index }}. {{ role }}承認</div>
+      {% if a %}
+      <table>
+        <tr><th style="width:160px;">承認者</th><td>{{ a.approver_name }}</td></tr>
+        <tr><th>承認日時</th><td>{{ a.approved_at | replace("T", " ") }}</td></tr>
+        <tr><th>コメント</th><td>{{ a.comment or "" }}</td></tr>
+      </table>
+      {% elif approvals|length == loop.index0 %}
+      <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}" data-lock>
+        <div class="form-row">
+          <label>{{ role }}承認者名</label>
+          <input type="text" name="approver_name" required>
+        </div>
+        <div class="form-row">
+          <label>コメント（任意）</label>
+          <textarea name="approver_comment" rows="2"></textarea>
+        </div>
+        <button type="submit" class="btn btn-success">{{ role }}承認する</button>
+      </form>
+      {% else %}
+      <p class="footer-note">前の段階の承認待ちです。</p>
+      {% endif %}
+    </div>
+    {% endfor %}
   {% endif %}
 </div>
 

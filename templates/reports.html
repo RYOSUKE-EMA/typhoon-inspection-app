@@ -52,7 +52,7 @@
               {% if r.status == '確認済' %}
               <span class="badge badge-done">確認済</span>
               {% else %}
-              <span class="badge badge-pending">確認待ち</span>
+              <span class="badge badge-pending">{{ r.status if r.status != "未確認" else "TL承認待ち" }}</span>
               {% endif %}
             </td>
             <td><a class="btn btn-primary btn-sm" href="{{ url_for('report_detail', category=category, report_id=r.id) }}">詳細</a></td>
