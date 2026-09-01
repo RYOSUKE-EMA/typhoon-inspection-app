@@ -949,6 +949,7 @@ def init_db():
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_date TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_attendees TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_notes TEXT")
+            cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS submitted_by TEXT")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS report_items (
                 id SERIAL PRIMARY KEY,
@@ -1059,7 +1060,7 @@ def init_db():
                 conn.execute("ALTER TABLE reports ADD COLUMN category TEXT NOT NULL DEFAULT 'typhoon'")
             if "subtype" not in cols:
                 conn.execute("ALTER TABLE reports ADD COLUMN subtype TEXT")
-            for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes"):
+            for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes", "submitted_by"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
             res_cols = [r[1] for r in conn.execute("PRAGMA table_info(resources)").fetchall()]
@@ -1082,7 +1083,7 @@ def to_bytes(data):
 # ポータル等から渡される工事情報を、画面遷移中もリンクへ引き継ぐためのクエリ
 def _project_query():
     pq = {}
-    for k in ("project_name", "project_no", "inspector", "site_manager"):
+    for k in ("project_name", "project_no", "inspector", "site_manager", "kintone_user"):
         v = request.args.get(k, "").strip()
         if v:
             pq[k] = v
@@ -1135,16 +1136,24 @@ def new_report(category):
         meeting_date = f.get("meeting_date", "").strip()
         meeting_attendees = f.get("meeting_attendees", "").strip()
         meeting_notes = f.get("meeting_notes", "").strip()
+        submitted_by = f.get("kintone_user", "").strip()
+
+        # 点検結果の未選択チェック（ブラウザのrequiredが第一防衛、これはサーバ側の保険）
+        missing = [i + 1 for i in range(len(checklist)) if not f.get(f"result_{i}", "").strip()]
+        if missing:
+            nums = "、".join(str(n) for n in missing[:10])
+            return (f"<meta charset='utf-8'><p>点検結果が未選択の項目があります（No.{nums}）。"
+                    f"ブラウザの「戻る」で戻り、すべての項目を選択してから提出してください。</p>", 400)
 
         created_at = datetime.now().isoformat(timespec="seconds")
         conn = get_db()
         try:
             cur = db_execute(conn, """
                 INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
-                                      site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                      site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", created_at,
-                  site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes))
+                  site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
             else:
@@ -1181,10 +1190,25 @@ def new_report(category):
         "inspector": request.args.get("inspector", "").strip(),
         "site_manager": request.args.get("site_manager", "").strip(),
     }
+    # kintone埋め込み経由：ログインユーザーの直前の提出内容で補完
+    kintone_user = request.args.get("kintone_user", "").strip()
+    if kintone_user:
+        conn = get_db()
+        try:
+            last = fetchone(db_execute(conn, """
+                SELECT project_name, project_no, inspector, site_manager FROM reports
+                WHERE category=? AND submitted_by=? ORDER BY id DESC LIMIT 1
+            """, (category, kintone_user)))
+        finally:
+            conn.close()
+        if last:
+            for k in ("project_name", "project_no", "inspector", "site_manager"):
+                if not prefill[k]:
+                    prefill[k] = last[k] or ""
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, prefill=prefill, legend=RESULT_LEGEND,
-                           guide_names=_guide_item_names(category, subtype))
+                           guide_names=_guide_item_names(category, subtype), kintone_user=kintone_user)
 
 
 # ── 点検報告：編集 ───────────────────────────────────────────────

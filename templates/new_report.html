@@ -5,6 +5,7 @@
   <h2><span class="accent-bar"></span>{{ info.label }}{% if subtype_label %}（{{ subtype_label }}）{% endif %}{% if edit %}（編集）{% else %}（新規作成）{% endif %}</h2>
   <form method="post" data-lock>
     {% if subtype %}<input type="hidden" name="subtype" value="{{ subtype }}">{% endif %}
+    {% if kintone_user %}<input type="hidden" name="kintone_user" value="{{ kintone_user }}">{% endif %}
     <div class="flex">
       <div class="form-row" style="flex:2; min-width:220px;">
         <label>工事名</label>
@@ -85,7 +86,8 @@
           <td>{{ item }}{% if guide_names and item in guide_names %}<button type="button" class="guide-link" data-category="{{ category }}" data-subtype="{{ subtype or '' }}" data-item="{{ item }}">解説</button>{% endif %}</td>
           <td>
             {% set current_result = edit_items[loop.index0].result if edit_items else '' %}
-            <select name="result_{{ loop.index0 }}">
+            <select name="result_{{ loop.index0 }}" required>
+              <option value="" {% if not current_result %}selected{% endif %} disabled hidden>選択</option>
               {% for opt in options %}
               <option value="{{ opt }}" {% if current_result == opt %}selected{% endif %}>{{ opt }}</option>
               {% endfor %}
