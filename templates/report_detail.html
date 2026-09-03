@@ -20,6 +20,7 @@
     <tr><th>対象期間</th><td>{{ report.report_month ~ "月 " ~ report.report_period if report.report_month else "" }}</td></tr>
     <tr><th>第○回</th><td>{{ report.report_round or "" }}</td></tr>
     {% endif %}
+    {% if flow %}
     <tr><th>状態</th><td>
       {% if report.status == '確認済' %}
       <span class="badge badge-done">確認済</span>
@@ -27,6 +28,7 @@
       <span class="badge badge-pending">{{ report.status if report.status != "未確認" else "TL承認待ち" }}</span>
       {% endif %}
     </td></tr>
+    {% endif %}
   </table>
 
   <h2><span class="accent-bar"></span>点検項目</h2>
@@ -59,6 +61,7 @@
 </div>
 {% endif %}
 
+{% if flow %}
 <div class="card">
   <h2><span class="accent-bar"></span>承認欄（{{ flow | join(" → ") }}）</h2>
   {% if not approvals and report.status == '確認済' %}
@@ -81,10 +84,21 @@
       </table>
       {% elif approvals|length == loop.index0 %}
       <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}" data-lock>
+        <input type="hidden" name="kintone_user" value="{{ kintone_user or '' }}">
+        {% if kintone_user %}
         <div class="form-row">
-          <label>{{ role }}承認者名</label>
+          <label style="font-size:0.95rem; display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" name="approve_check" value="1" required style="width:auto; transform:scale(1.4);">
+            内容を確認し、{{ role }}として承認します（承認者：{{ kintone_user }}・承認日は自動記録）
+          </label>
+        </div>
+        {% else %}
+        <input type="hidden" name="approve_check" value="1">
+        <div class="form-row">
+          <label>{{ role }}承認者名（kintone外からのアクセスのため手入力）</label>
           <input type="text" name="approver_name" required>
         </div>
+        {% endif %}
         <div class="form-row">
           <label>コメント（任意）</label>
           <textarea name="approver_comment" rows="2"></textarea>
@@ -98,6 +112,7 @@
     {% endfor %}
   {% endif %}
 </div>
+{% endif %}
 
 {% if request.args.get('delete_error') %}
 <p style="color:#b3382c; font-weight:700;">パスワードが正しくないため削除できませんでした。</p>

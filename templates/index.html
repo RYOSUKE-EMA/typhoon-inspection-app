@@ -10,13 +10,31 @@
 
 <div class="menu-grid">
   {% for key, info in types.items() %}
+  {% set locked = key not in released and not is_dev %}
+  {% if locked %}
+  <div class="menu-card" style="opacity:0.55; cursor:not-allowed; border-left-color:#9aa4a9;">
+    <span class="badge pending-badge" style="background:#eef1f3; color:#5b656b; border-color:#c8cfd3;">開発中</span>
+    <div class="title" style="color:#5b656b;">{{ info.label }}</div>
+    <div class="desc">現在準備中です。公開までお待ちください。</div>
+  </div>
+  {% else %}
   <a class="menu-card" href="{{ url_for('reports_list', category=key) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">
     {% if counts[key] > 0 %}
     <span class="badge badge-pending pending-badge">確認待ち {{ counts[key] }}</span>
     {% endif %}
+    {% if key not in released %}
+    <span class="badge pending-badge" style="background:#eef1f3; color:#5b656b; border-color:#c8cfd3;">開発中（開発者のみ）</span>
+    {% endif %}
     <div class="title">{{ info.label }}</div>
     <div class="desc">{{ info.desc }}</div>
   </a>
+  {% endif %}
   {% endfor %}
 </div>
+
+{% if is_dev %}
+<div class="flex" style="margin-top:18px;">
+  <a class="btn btn-secondary" href="{{ url_for('approvers') }}">承認者・通知先の名簿設定</a>
+</div>
+{% endif %}
 {% endblock %}

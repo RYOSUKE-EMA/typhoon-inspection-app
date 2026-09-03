@@ -27,6 +27,48 @@
       </div>
     </div>
 
+    {% if not edit and info.approval_flow %}
+    <h2 style="margin-top:24px;"><span class="accent-bar"></span>提出先（kintone通知）</h2>
+    <div class="flex">
+      {% if "TL" in info.approval_flow %}
+      <div class="form-row" style="flex:1; min-width:200px;">
+        <label>承認するTL</label>
+        <select name="notify_tl" {% if notify_users.get("TL") %}required{% endif %}>
+          <option value="" selected disabled hidden>選択してください</option>
+          {% for u in notify_users.get("TL", []) %}
+          <option value="{{ u.kintone_code }}">{{ u.display_name }}</option>
+          {% endfor %}
+        </select>
+        {% if not notify_users.get("TL") %}<p class="footer-note">名簿が未登録です（トップの名簿設定から登録）</p>{% endif %}
+      </div>
+      {% endif %}
+      {% if "GL・BL" in info.approval_flow %}
+      <div class="form-row" style="flex:1; min-width:200px;">
+        <label>承認するGL・BL</label>
+        <select name="notify_gl" {% if notify_users.get("GL・BL") %}required{% endif %}>
+          <option value="" selected disabled hidden>選択してください</option>
+          {% for u in notify_users.get("GL・BL", []) %}
+          <option value="{{ u.kintone_code }}">{{ u.display_name }}</option>
+          {% endfor %}
+        </select>
+        {% if not notify_users.get("GL・BL") %}<p class="footer-note">名簿が未登録です</p>{% endif %}
+      </div>
+      {% endif %}
+      {% if category == 'safety_patrol' %}
+      <div class="form-row" style="flex:1; min-width:200px;">
+        <label>安全検査室（同時通知）</label>
+        <select name="notify_safety" {% if notify_users.get("安全検査室") %}required{% endif %}>
+          <option value="" selected disabled hidden>選択してください</option>
+          {% for u in notify_users.get("安全検査室", []) %}
+          <option value="{{ u.kintone_code }}">{{ u.display_name }}</option>
+          {% endfor %}
+        </select>
+        {% if not notify_users.get("安全検査室") %}<p class="footer-note">名簿が未登録です</p>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
     {% if category == 'scaffold' %}
     <h2 style="margin-top:24px;"><span class="accent-bar"></span>組立者・点検者の資格情報</h2>
     <div class="flex">

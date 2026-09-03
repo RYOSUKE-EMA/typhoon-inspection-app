@@ -34,7 +34,7 @@
             {% if info.subtypes %}<th>足場の種類</th>{% endif %}
             <th>点検者</th>
             <th>点検日</th>
-            <th>状態</th>
+            {% if info.approval_flow %}<th>状態</th>{% endif %}
             <th></th>
           </tr>
         </thead>
@@ -48,6 +48,7 @@
             {% endif %}
             <td>{{ r.inspector }}</td>
             <td>{{ r.inspect_datetime[:10] }}</td>
+            {% if info.approval_flow %}
             <td>
               {% if r.status == '確認済' %}
               <span class="badge badge-done">確認済</span>
@@ -55,7 +56,8 @@
               <span class="badge badge-pending">{{ r.status if r.status != "未確認" else "TL承認待ち" }}</span>
               {% endif %}
             </td>
-            <td><a class="btn btn-primary btn-sm" href="{{ url_for('report_detail', category=category, report_id=r.id) }}">詳細</a></td>
+            {% endif %}
+            <td><a class="btn btn-primary btn-sm" href="{{ url_for('report_detail', category=category, report_id=r.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">詳細</a></td>
           </tr>
           {% endfor %}
         </tbody>

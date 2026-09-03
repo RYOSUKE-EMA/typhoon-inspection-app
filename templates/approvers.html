@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2><span class="accent-bar"></span>承認者・通知先の名簿</h2>
+  <p class="footer-note">報告書の提出・承認時にkintone通知を送る相手を登録します。「kintoneログイン名」はkintoneのユーザーコード（メンション時に使われるID）を入力してください。</p>
+
+  {% for role in roles %}
+  <h2 style="margin-top:22px;"><span class="accent-bar"></span>{{ role }}</h2>
+  {% if users.get(role) %}
+  <table style="max-width:600px;">
+    <thead><tr><th>表示名</th><th>kintoneログイン名</th><th style="width:80px;"></th></tr></thead>
+    <tbody>
+      {% for u in users[role] %}
+      <tr>
+        <td>{{ u.display_name }}</td>
+        <td>{{ u.kintone_code }}</td>
+        <td>
+          <form method="post" action="{{ url_for('approvers_delete', user_id=u.id) }}" onsubmit="return confirm('削除しますか？');">
+            <button type="submit" class="btn btn-danger btn-sm">削除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="footer-note">まだ登録されていません。</p>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2><span class="accent-bar"></span>追加</h2>
+  <form method="post" data-lock>
+    <div class="flex">
+      <div class="form-row" style="min-width:140px;">
+        <label>役割</label>
+        <select name="role">
+          {% for role in roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-row" style="flex:1; min-width:160px;">
+        <label>表示名</label>
+        <input type="text" name="display_name" placeholder="例：山田 太郎" required>
+      </div>
+      <div class="form-row" style="flex:1; min-width:160px;">
+        <label>kintoneログイン名</label>
+        <input type="text" name="kintone_code" placeholder="例：c0114101" required>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">追加する</button>
+  </form>
+</div>
+
+<div class="flex">
+  <a class="btn btn-secondary" href="{{ url_for('index') }}">トップに戻る</a>
+</div>
+{% endblock %}

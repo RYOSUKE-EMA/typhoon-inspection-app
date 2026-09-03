@@ -28,33 +28,40 @@ KINTONE_APP_ID = os.environ.get("KINTONE_APP_ID", "5287")
 KINTONE_API_TOKEN = os.environ.get("KINTONE_API_TOKEN", "")
 
 
+# kintone連携の対象（足場は提出・承認なしのため対象外）
+KINTONE_SYNC_CATEGORIES = ("safety_patrol", "typhoon", "disaster")
+
+
 def sync_report_to_kintone(report, items):
-    """安全旬報の報告書をkintoneに自動連携する（失敗してもアプリ本体には影響させない）。"""
-    if report["category"] != "safety_patrol" or not KINTONE_API_TOKEN:
-        return
+    """報告書をkintoneに自動連携し、レコードIDを返す（失敗してもアプリ本体には影響させない）。"""
+    if report["category"] not in KINTONE_SYNC_CATEGORIES or not KINTONE_API_TOKEN:
+        return None
     base = f"https://{KINTONE_SUBDOMAIN}.cybozu.com/k/v1"
     get_headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN}
     write_headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN, "Content-Type": "application/json"}
 
     file_key = None
-    try:
-        pdf_buf = build_safety_patrol_pdf(report, items)
-        year = (report["inspect_datetime"] or "")[:4]
-        month = report["report_month"] or ""
-        period = report["report_period"] or ""
-        filename = f"{report['project_no']}_安全旬報{year}年{month}月{period}.pdf"
-        upload_resp = requests.post(
-            f"{base}/file.json",
-            headers={"X-Cybozu-API-Token": KINTONE_API_TOKEN},
-            files={"file": (filename, pdf_buf.getvalue(), "application/pdf")},
-            timeout=20,
-        )
-        upload_resp.raise_for_status()
-        file_key = upload_resp.json()["fileKey"]
-    except Exception as e:
-        print(f"kintone pdf upload failed: {e}")
+    if report["category"] == "safety_patrol":
+        try:
+            pdf_buf = build_safety_patrol_pdf(report, items)
+            year = (report["inspect_datetime"] or "")[:4]
+            month = report["report_month"] or ""
+            period = report["report_period"] or ""
+            filename = f"{report['project_no']}_安全旬報{year}年{month}月{period}.pdf"
+            upload_resp = requests.post(
+                f"{base}/file.json",
+                headers={"X-Cybozu-API-Token": KINTONE_API_TOKEN},
+                files={"file": (filename, pdf_buf.getvalue(), "application/pdf")},
+                timeout=20,
+            )
+            upload_resp.raise_for_status()
+            file_key = upload_resp.json()["fileKey"]
+        except Exception as e:
+            print(f"kintone pdf upload failed: {e}")
 
+    category_label = INSPECTION_TYPES.get(report["category"], {}).get("label", report["category"])
     record = {
+        "category": {"value": category_label},
         "report_id": {"value": report["id"]},
         "project_name": {"value": report["project_name"] or ""},
         "project_no": {"value": report["project_no"] or ""},
@@ -94,14 +101,50 @@ def sync_report_to_kintone(report, items):
                 json={"app": KINTONE_APP_ID, "id": kintone_record_id, "record": record},
                 timeout=10,
             ).raise_for_status()
+            return kintone_record_id
         else:
-            requests.post(
+            resp = requests.post(
                 f"{base}/record.json", headers=write_headers,
                 json={"app": KINTONE_APP_ID, "record": record},
                 timeout=10,
-            ).raise_for_status()
+            )
+            resp.raise_for_status()
+            return resp.json().get("id")
     except Exception as e:
         print(f"kintone sync failed: {e}")
+        return None
+
+
+def notify_kintone_users(kintone_record_id, codes, message):
+    """kintoneレコードにコメントを付け、指定ユーザーへ@メンション通知する。"""
+    if not kintone_record_id or not KINTONE_API_TOKEN:
+        return
+    mentions = [{"code": c, "type": "USER"} for c in codes if c]
+    if not mentions:
+        return
+    try:
+        requests.post(
+            f"https://{KINTONE_SUBDOMAIN}.cybozu.com/k/v1/record/comment.json",
+            headers={"X-Cybozu-API-Token": KINTONE_API_TOKEN, "Content-Type": "application/json"},
+            json={"app": KINTONE_APP_ID, "record": kintone_record_id,
+                  "comment": {"text": message, "mentions": mentions}},
+            timeout=10,
+        ).raise_for_status()
+    except Exception as e:
+        print(f"kintone notify failed: {e}")
+
+
+def get_notify_users():
+    """役割ごとの通知先ユーザー名簿を返す。{role: [{display_name, kintone_code}]}"""
+    conn = get_db()
+    try:
+        rows = fetchall(db_execute(conn, "SELECT * FROM notify_users ORDER BY role, id"))
+    finally:
+        conn.close()
+    result = {}
+    for r in rows:
+        result.setdefault(r["role"], []).append(r)
+    return result
 
 
 def delete_report_from_kintone(report_id):
@@ -858,14 +901,14 @@ INSPECTION_TYPES = {
         "label": "足場点検記録",
         "icon": "🪜",
         "desc": "足場の組立・変更後や強風後等の点検を行います（労働安全衛生規則対応・足場種類別）",
-        "approval_flow": ["TL"],
+        "approval_flow": [],
         "subtypes": SCAFFOLD_SUBTYPES,
     },
     "typhoon": {
         "label": "台風養生点検",
         "icon": "🌀",
         "desc": "台風接近時の養生状況を点検します",
-        "approval_flow": ["TL", "GL・BL"],
+        "approval_flow": ["TL"],
         "checklist": [
             "足場の補強・控え（ブレース）の設置状況",
             "足場の養生シート・メッシュシートの撤去または増し締め",
@@ -999,8 +1042,16 @@ def init_db():
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_attendees TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_notes TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS submitted_by TEXT")
-            for col in ("assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no"):
+            for col in ("assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no",
+                        "notify_tl", "notify_gl", "notify_safety"):
                 cur.execute(f"ALTER TABLE reports ADD COLUMN IF NOT EXISTS {col} TEXT")
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS notify_users (
+                id SERIAL PRIMARY KEY,
+                role TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                kintone_code TEXT NOT NULL
+            )""")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS report_items (
                 id SERIAL PRIMARY KEY,
@@ -1104,6 +1155,12 @@ def init_db():
                 updated_at TEXT,
                 UNIQUE (category, subtype, item_name)
             );
+            CREATE TABLE IF NOT EXISTS notify_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                role TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                kintone_code TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS approvals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 report_id INTEGER NOT NULL,
@@ -1131,7 +1188,8 @@ def init_db():
             if "subtype" not in cols:
                 conn.execute("ALTER TABLE reports ADD COLUMN subtype TEXT")
             for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes", "submitted_by",
-                        "assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no"):
+                        "assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no",
+                        "notify_tl", "notify_gl", "notify_safety"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
             res_cols = [r[1] for r in conn.execute("PRAGMA table_info(resources)").fetchall()]
@@ -1161,17 +1219,29 @@ def _project_query():
     return pq
 
 
+# 開発中アプリを操作できる開発者（kintoneユーザー名の部分一致）
+DEV_USERS = ("江間",)
+# 公開済みカテゴリ（それ以外は開発中ロック）
+RELEASED_CATEGORIES = ("typhoon",)
+
+
 @app.route("/")
 def index():
     conn = get_db()
     try:
         counts = {}
-        for category in INSPECTION_TYPES:
+        for category, info in INSPECTION_TYPES.items():
+            if not info.get("approval_flow"):
+                counts[category] = 0
+                continue
             row = fetchone(db_execute(conn, "SELECT COUNT(*) AS c FROM reports WHERE category=? AND status<>?", (category, "確認済")))
             counts[category] = row["c"]
     finally:
         conn.close()
-    return render_template("index.html", types=INSPECTION_TYPES, counts=counts, pq=_project_query())
+    kintone_user = request.args.get("kintone_user", "").strip()
+    is_dev = any(d in kintone_user for d in DEV_USERS) if kintone_user else False
+    return render_template("index.html", types=INSPECTION_TYPES, counts=counts, pq=_project_query(),
+                           is_dev=is_dev, released=RELEASED_CATEGORIES)
 
 
 # ── 点検報告：新規作成 ───────────────────────────────────────────
@@ -1213,6 +1283,9 @@ def new_report(category):
         assembler_qual_no = f.get("assembler_qual_no", "").strip()
         inspector_qual = f.get("inspector_qual", "").strip()
         inspector_qual_no = f.get("inspector_qual_no", "").strip()
+        notify_tl = f.get("notify_tl", "").strip()
+        notify_gl = f.get("notify_gl", "").strip()
+        notify_safety = f.get("notify_safety", "").strip()
 
         # 点検結果の未選択チェック（ブラウザのrequiredが第一防衛、これはサーバ側の保険）
         missing = [i + 1 for i in range(len(checklist)) if not f.get(f"result_{i}", "").strip()]
@@ -1227,11 +1300,13 @@ def new_report(category):
             cur = db_execute(conn, """
                 INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
                                       site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
-                                      assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                      assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
+                                      notify_tl, notify_gl, notify_safety)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", created_at,
                   site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
-                  assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no))
+                  assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
+                  notify_tl, notify_gl, notify_safety))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
             else:
@@ -1250,13 +1325,20 @@ def new_report(category):
         finally:
             conn.close()
 
-        sync_report_to_kintone({
+        kintone_record_id = sync_report_to_kintone({
             "id": report_id, "category": category, "project_name": project_name, "project_no": project_no,
             "inspect_datetime": inspect_datetime, "inspector": inspector, "site_manager": site_manager,
             "report_month": report_month, "report_period": report_period, "report_round": report_round,
             "meeting_date": meeting_date, "meeting_attendees": meeting_attendees, "meeting_notes": meeting_notes,
             "status": "未確認", "created_at": created_at,
         }, sync_items)
+        # 提出時通知：TL（安全旬報は安全検査室にも同時通知）
+        label = info["label"]
+        codes = [notify_tl]
+        if category == "safety_patrol":
+            codes.append(notify_safety)
+        notify_kintone_users(kintone_record_id, codes,
+                             f"{label}が提出されました（工事名：{project_name} / 点検者：{inspector}）。承認をお願いします。")
         return redirect(url_for("report_detail", category=category, report_id=report_id))
 
     now = datetime.now().strftime("%Y-%m-%d")
@@ -1289,7 +1371,8 @@ def new_report(category):
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, prefill=prefill, legend=RESULT_LEGEND,
-                           guide_names=_guide_item_names(category, subtype), kintone_user=kintone_user)
+                           guide_names=_guide_item_names(category, subtype), kintone_user=kintone_user,
+                           notify_users=get_notify_users())
 
 
 # ── 点検報告：編集 ───────────────────────────────────────────────
@@ -1435,7 +1518,8 @@ def report_detail(category, report_id):
     flow = info.get("approval_flow", ["確認"])
     return render_template("report_detail.html", category=category, info=info, report=report, items=items, legend=RESULT_LEGEND,
                            guide_names=_guide_item_names(category, report["subtype"] or ""),
-                           flow=flow, approvals=approvals)
+                           flow=flow, approvals=approvals,
+                           kintone_user=request.args.get("kintone_user", "").strip())
 
 
 @app.route("/reports/<category>/<int:report_id>/pdf")
@@ -1638,10 +1722,12 @@ def approve_report(category, report_id):
     info = get_inspection_type(category)
     flow = info.get("approval_flow", ["確認"])
     f = request.form
-    approver_name = f.get("approver_name", "").strip()
+    # チェックボックス承認：承認者はkintoneログインユーザーを自動採用
+    approver_name = f.get("kintone_user", "").strip() or f.get("approver_name", "").strip()
     approver_comment = f.get("approver_comment", "").strip()
-    if not approver_name:
-        return redirect(url_for("report_detail", category=category, report_id=report_id))
+    if f.get("approve_check") != "1" or not approver_name:
+        return redirect(url_for("report_detail", category=category, report_id=report_id,
+                                kintone_user=f.get("kintone_user", "")))
 
     conn = get_db()
     try:
@@ -1676,8 +1762,13 @@ def approve_report(category, report_id):
 
     report = dict(report)
     report["status"] = new_status
-    sync_report_to_kintone(report, items)
-    return redirect(url_for("report_detail", category=category, report_id=report_id))
+    kintone_record_id = sync_report_to_kintone(report, items)
+    if new_status != "確認済":
+        # 次の承認者（GL・BL）へ通知
+        notify_kintone_users(kintone_record_id, [report.get("notify_gl") or ""],
+                             f"{info['label']}のTL承認が完了しました（工事名：{report['project_name']}）。次の承認をお願いします。")
+    return redirect(url_for("report_detail", category=category, report_id=report_id,
+                            kintone_user=f.get("kintone_user", "")))
 
 
 @app.route("/reports/<category>/<int:report_id>/delete", methods=["POST"])
@@ -1929,6 +2020,40 @@ def api_guide(category):
         "description": row["description"] or "",
         "image_urls": [url_for("guide_image", image_id=i) for i in image_ids],
     }
+
+
+# ── 通知先（承認者）名簿の管理 ───────────────────────────────────
+NOTIFY_ROLES = ["TL", "GL・BL", "安全検査室"]
+
+
+@app.route("/approvers", methods=["GET", "POST"])
+def approvers():
+    if request.method == "POST":
+        f = request.form
+        role = f.get("role", "").strip()
+        display_name = f.get("display_name", "").strip()
+        kintone_code = f.get("kintone_code", "").strip()
+        if role in NOTIFY_ROLES and display_name and kintone_code:
+            conn = get_db()
+            try:
+                db_execute(conn, "INSERT INTO notify_users (role, display_name, kintone_code) VALUES (?,?,?)",
+                           (role, display_name, kintone_code))
+                conn.commit()
+            finally:
+                conn.close()
+        return redirect(url_for("approvers"))
+    return render_template("approvers.html", roles=NOTIFY_ROLES, users=get_notify_users())
+
+
+@app.route("/approvers/<int:user_id>/delete", methods=["POST"])
+def approvers_delete(user_id):
+    conn = get_db()
+    try:
+        db_execute(conn, "DELETE FROM notify_users WHERE id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("approvers"))
 
 
 # 起動時に必ずDB初期化（gunicorn経由でも動作するよう__main__の外に配置）

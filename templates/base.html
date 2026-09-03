@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2212%22%20fill%3D%22%23b3382c%22%2F%3E%3Ctext%20x%3D%2232%22%20y%3D%2233%22%20font-family%3D%22sans-serif%22%20font-size%3D%2234%22%20font-weight%3D%22bold%22%20fill%3D%22%23fff%22%20text-anchor%3D%22middle%22%20dominant-baseline%3D%22central%22%3E%E7%82%B9%3C%2Ftext%3E%3C%2Fsvg%3E">
+<link rel="icon" href="/favicon.ico">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>現場点検システム</title>
@@ -340,13 +340,39 @@
 </div>
 
 <script>
+// ページ遷移ロック：リンククリック時にローディング画面を出し、連打を防ぐ
+document.addEventListener("click", function (e) {
+  var a = e.target.closest("a");
+  if (!a) return;
+  var href = a.getAttribute("href") || "";
+  // 別タブ・アンカー・外部リンク・修飾キー押下は対象外
+  if (a.target === "_blank" || href.startsWith("#") || href.startsWith("http") || href.startsWith("mailto:")) return;
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+  // PDFなどダウンロード系は画面遷移しないため対象外
+  if (href.indexOf("/pdf") !== -1 || href.indexOf("/download") !== -1) return;
+  var overlay = document.getElementById("submit-overlay");
+  overlay.querySelector(".msg").textContent = "読み込み中...";
+  overlay.querySelector(".sub").textContent = "画面が切り替わるまでお待ちください";
+  overlay.classList.add("show");
+});
+// bfcache（戻るボタン）で復帰したときにオーバーレイを消す
+window.addEventListener("pageshow", function () {
+  document.getElementById("submit-overlay").classList.remove("show");
+  document.querySelectorAll("form[data-lock]").forEach(function (f) {
+    delete f.dataset.submitted;
+    f.querySelectorAll("button[type=submit]").forEach(function (b) { b.disabled = false; });
+  });
+});
+
 // 送信ロック：data-lock付きフォームの送信時にオーバーレイを出し、二重送信を防ぐ
 document.addEventListener("submit", function (e) {
   var form = e.target;
   if (!form.hasAttribute("data-lock")) return;
   if (form.dataset.submitted === "1") { e.preventDefault(); return; }
   form.dataset.submitted = "1";
-  document.getElementById("submit-overlay").classList.add("show");
+  var ov = document.getElementById("submit-overlay");
+  ov.querySelector(".msg").textContent = "送信中...";
+  ov.classList.add("show");
   form.querySelectorAll("button[type=submit]").forEach(function (b) { b.disabled = true; });
 });
 
