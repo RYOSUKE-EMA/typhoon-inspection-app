@@ -63,7 +63,7 @@
 
 {% if flow %}
 <div class="card">
-  <h2><span class="accent-bar"></span>承認欄（{{ flow | join(" → ") }}）</h2>
+  <h2><span class="accent-bar"></span>承認欄（{{ flow_label }}）</h2>
   {% if not approvals and report.status == '確認済' %}
     {# 承認ルート導入前に確認済になった旧レコード #}
     <table>
@@ -72,42 +72,49 @@
       <tr><th>コメント</th><td>{{ report.approver_comment or "" }}</td></tr>
     </table>
   {% else %}
-    {% for role in flow %}
-    {% set a = approvals[loop.index0] if approvals|length > loop.index0 else None %}
+    {% for step_roles in steps %}
+    {% set step_idx = loop.index0 %}
     <div style="border:1px solid var(--line); border-radius:4px; padding:14px 16px; margin-bottom:12px;">
-      <div style="font-weight:700; margin-bottom:8px;">{{ loop.index }}. {{ role }}承認</div>
-      {% if a %}
-      <table>
-        <tr><th style="width:160px;">承認者</th><td>{{ a.approver_name }}</td></tr>
-        <tr><th>承認日時</th><td>{{ a.approved_at | replace("T", " ") }}</td></tr>
-        <tr><th>コメント</th><td>{{ a.comment or "" }}</td></tr>
-      </table>
-      {% elif approvals|length == loop.index0 %}
-      <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}" data-lock>
-        <input type="hidden" name="kintone_user" value="{{ kintone_user or '' }}">
-        {% if kintone_user %}
-        <div class="form-row">
-          <label style="font-size:0.95rem; display:flex; align-items:center; gap:8px; cursor:pointer;">
-            <input type="checkbox" name="approve_check" value="1" required style="width:auto; transform:scale(1.4);">
-            内容を確認し、{{ role }}として承認します（承認者：{{ kintone_user }}・承認日は自動記録）
-          </label>
-        </div>
+      <div style="font-weight:700; margin-bottom:8px;">{{ loop.index }}. {{ step_roles | join("・") }}承認{% if step_roles | length > 1 %}（両者の承認で完了・順不同）{% endif %}</div>
+      {% for role in step_roles %}
+      {% set a = approvals_map.get(step_idx, {}).get(role) %}
+      <div style="{% if step_roles | length > 1 %}border-top:1px dashed var(--line); padding-top:10px; margin-top:10px;{% endif %}">
+        {% if step_roles | length > 1 %}<div style="font-weight:500; margin-bottom:6px;">{{ role }}</div>{% endif %}
+        {% if a %}
+        <table>
+          <tr><th style="width:160px;">承認者</th><td>{{ a.approver_name }}</td></tr>
+          <tr><th>承認日時</th><td>{{ a.approved_at | replace("T", " ") }}</td></tr>
+          <tr><th>コメント</th><td>{{ a.comment or "" }}</td></tr>
+        </table>
+        {% elif current_step == step_idx %}
+        <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}" data-lock>
+          <input type="hidden" name="kintone_user" value="{{ kintone_user or '' }}">
+          <input type="hidden" name="role" value="{{ role }}">
+          {% if kintone_user %}
+          <div class="form-row">
+            <label style="font-size:0.95rem; display:flex; align-items:center; gap:8px; cursor:pointer;">
+              <input type="checkbox" name="approve_check" value="1" required style="width:auto; transform:scale(1.4);">
+              内容を確認し、{{ role }}として承認します（承認者：{{ kintone_user }}・承認日は自動記録）
+            </label>
+          </div>
+          {% else %}
+          <input type="hidden" name="approve_check" value="1">
+          <div class="form-row">
+            <label>{{ role }}承認者名（kintone外からのアクセスのため手入力）</label>
+            <input type="text" name="approver_name" required>
+          </div>
+          {% endif %}
+          <div class="form-row">
+            <label>コメント（任意）</label>
+            <textarea name="approver_comment" rows="2"></textarea>
+          </div>
+          <button type="submit" class="btn btn-success">{{ role }}承認する</button>
+        </form>
         {% else %}
-        <input type="hidden" name="approve_check" value="1">
-        <div class="form-row">
-          <label>{{ role }}承認者名（kintone外からのアクセスのため手入力）</label>
-          <input type="text" name="approver_name" required>
-        </div>
+        <p class="footer-note">前の段階の承認待ちです。</p>
         {% endif %}
-        <div class="form-row">
-          <label>コメント（任意）</label>
-          <textarea name="approver_comment" rows="2"></textarea>
-        </div>
-        <button type="submit" class="btn btn-success">{{ role }}承認する</button>
-      </form>
-      {% else %}
-      <p class="footer-note">前の段階の承認待ちです。</p>
-      {% endif %}
+      </div>
+      {% endfor %}
     </div>
     {% endfor %}
   {% endif %}

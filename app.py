@@ -992,7 +992,7 @@ INSPECTION_TYPES = {
         "label": "災害時現場点検",
         "icon": "⚠",
         "desc": "地震・台風・異常気象時の現場点検を行います（災害時現場点検報告書・地震異常気象時報告書対応）",
-        "approval_flow": ["TL", "GL・BL"],
+        "approval_flow": ["TL", ["GL", "BL"]],
         "checklist": [
             # 全体
             "工事敷地全体の状況（工事目的物以外も含む）",
@@ -1073,7 +1073,7 @@ def fetchone(cur):
 
 
 # スキーマ版数。マイグレーションを追加したら+1する（コールドスタート時の初期化スキップ判定に使用）
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 def init_db():
@@ -1114,7 +1114,7 @@ def init_db():
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_notes TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS submitted_by TEXT")
             for col in ("assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no",
-                        "notify_tl", "notify_gl", "notify_safety"):
+                        "notify_tl", "notify_gl", "notify_bl", "notify_safety"):
                 cur.execute(f"ALTER TABLE reports ADD COLUMN IF NOT EXISTS {col} TEXT")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS notify_users (
@@ -1262,7 +1262,7 @@ def init_db():
                 conn.execute("ALTER TABLE reports ADD COLUMN subtype TEXT")
             for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes", "submitted_by",
                         "assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no",
-                        "notify_tl", "notify_gl", "notify_safety"):
+                        "notify_tl", "notify_gl", "notify_bl", "notify_safety"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
             res_cols = [r[1] for r in conn.execute("PRAGMA table_info(resources)").fetchall()]
@@ -1364,6 +1364,7 @@ def new_report(category):
         inspector_qual_no = f.get("inspector_qual_no", "").strip()
         notify_tl = f.get("notify_tl", "").strip()
         notify_gl = f.get("notify_gl", "").strip()
+        notify_bl = f.get("notify_bl", "").strip()
         notify_safety = f.get("notify_safety", "").strip()
 
         # 点検結果の未選択チェック（ブラウザのrequiredが第一防衛、これはサーバ側の保険）
@@ -1380,12 +1381,12 @@ def new_report(category):
                 INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
                                       site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
                                       assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
-                                      notify_tl, notify_gl, notify_safety)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                      notify_tl, notify_gl, notify_bl, notify_safety)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", created_at,
                   site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
                   assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
-                  notify_tl, notify_gl, notify_safety))
+                  notify_tl, notify_gl, notify_bl, notify_safety))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
             else:
@@ -1451,7 +1452,7 @@ def new_report(category):
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, prefill=prefill, legend=RESULT_LEGEND,
                            guide_names=_guide_item_names(category, subtype), kintone_user=kintone_user,
-                           notify_users=get_notify_users())
+                           notify_users=get_notify_users(), flow_roles=flow_roles_of(info))
 
 
 # ── 点検報告：編集 ───────────────────────────────────────────────
@@ -1594,10 +1595,21 @@ def report_detail(category, report_id):
         approvals = fetchall(db_execute(conn, "SELECT * FROM approvals WHERE report_id=? ORDER BY step", (report_id,)))
     finally:
         conn.close()
-    flow = info.get("approval_flow", ["確認"])
+    steps = flow_steps_of(info)
+    approvals_map = {}
+    for a in approvals:
+        approvals_map.setdefault(a["step"], {})[a["role"]] = a
+    # 現在承認可能な段
+    current_step = None
+    for idx, step_roles in enumerate(steps):
+        if not all(r in approvals_map.get(idx, {}) for r in step_roles):
+            current_step = idx
+            break
+    flow_label = " → ".join(step_label(s) for s in steps)
     return render_template("report_detail.html", category=category, info=info, report=report, items=items, legend=RESULT_LEGEND,
                            guide_names=_guide_item_names(category, report["subtype"] or ""),
-                           flow=flow, approvals=approvals,
+                           flow=steps, steps=steps, approvals=approvals, approvals_map=approvals_map,
+                           current_step=current_step, flow_label=flow_label,
                            kintone_user=request.args.get("kintone_user", "").strip())
 
 
@@ -1800,12 +1812,13 @@ def report_pdf(category, report_id):
 @app.route("/reports/<category>/<int:report_id>/approve", methods=["POST"])
 def approve_report(category, report_id):
     info = get_inspection_type(category)
-    flow = info.get("approval_flow", ["確認"])
+    steps = flow_steps_of(info)
     f = request.form
     # チェックボックス承認：承認者はkintoneログインユーザーを自動採用
     approver_name = f.get("kintone_user", "").strip() or f.get("approver_name", "").strip()
     approver_comment = f.get("approver_comment", "").strip()
-    if f.get("approve_check") != "1" or not approver_name:
+    role = f.get("role", "").strip()
+    if f.get("approve_check") != "1" or not approver_name or not steps:
         return redirect(url_for("report_detail", category=category, report_id=report_id,
                                 kintone_user=f.get("kintone_user", "")))
 
@@ -1814,22 +1827,35 @@ def approve_report(category, report_id):
         report = fetchone(db_execute(conn, "SELECT * FROM reports WHERE id=? AND category=?", (report_id, category)))
         if not report:
             abort(404)
-        approvals = fetchall(db_execute(conn, "SELECT * FROM approvals WHERE report_id=? ORDER BY step", (report_id,)))
-        next_step = len(approvals)
-        if next_step >= len(flow):
-            return redirect(url_for("report_detail", category=category, report_id=report_id))
+        approvals = fetchall(db_execute(conn, "SELECT * FROM approvals WHERE report_id=? ORDER BY step, id", (report_id,)))
+        done = {(a["step"], a["role"]) for a in approvals}
+
+        # 現在の段（未完了の最初の段）を求める
+        current = None
+        for idx, step_roles in enumerate(steps):
+            if not all((idx, r) in done for r in step_roles):
+                current = idx
+                break
+        # 全段完了済み、または指定roleが現在の段で承認可能でなければ何もしない
+        if current is None or role not in steps[current] or (current, role) in done:
+            return redirect(url_for("report_detail", category=category, report_id=report_id,
+                                    kintone_user=f.get("kintone_user", "")))
 
         now = datetime.now().isoformat(timespec="seconds")
-        role = flow[next_step]
         db_execute(conn, """
             INSERT INTO approvals (report_id, step, role, approver_name, comment, approved_at)
             VALUES (?,?,?,?,?,?)
-        """, (report_id, next_step, role, approver_name, approver_comment, now))
+        """, (report_id, current, role, approver_name, approver_comment, now))
+        done.add((current, role))
 
-        if next_step + 1 >= len(flow):
+        step_completed = all((current, r) in done for r in steps[current])
+        if step_completed and current + 1 >= len(steps):
             new_status = "確認済"
+        elif step_completed:
+            new_status = f"{step_label(steps[current + 1])}承認待ち"
         else:
-            new_status = f"{flow[next_step + 1]}承認待ち"
+            remaining = [r for r in steps[current] if (current, r) not in done]
+            new_status = f"{step_label(remaining)}承認待ち"
         # 互換のため最終承認者を従来列にも記録
         db_execute(conn, """
             UPDATE reports SET status=?, approver_name=?, approver_comment=?, approved_at=?
@@ -1843,10 +1869,13 @@ def approve_report(category, report_id):
     report = dict(report)
     report["status"] = new_status
     kintone_record_id = sync_report_to_kintone(report, items)
-    if new_status != "確認済":
-        # 次の承認者（GL・BL）へ通知
-        notify_kintone_users(kintone_record_id, [report.get("notify_gl") or ""],
-                             f"{info['label']}のTL承認が完了しました（工事名：{report['project_name']}）。次の承認をお願いします。")
+    if step_completed and new_status != "確認済":
+        # 次の段の承認者へ通知（GL・BLは両方へ）
+        next_roles = steps[current + 1]
+        code_map = {"TL": report.get("notify_tl"), "GL": report.get("notify_gl"), "BL": report.get("notify_bl")}
+        codes = [code_map.get(r) or "" for r in next_roles]
+        notify_kintone_users(kintone_record_id, codes,
+                             f"{info['label']}の{step_label(steps[current])}承認が完了しました（工事名：{report['project_name']}）。次の承認をお願いします。")
     return redirect(url_for("report_detail", category=category, report_id=report_id,
                             kintone_user=f.get("kintone_user", "")))
 
@@ -2102,6 +2131,20 @@ def api_guide(category):
     }
 
 
+def flow_steps_of(info):
+    """approval_flowを「段のリスト（各段は役割のリスト）」に正規化する。"""
+    return [[r] if isinstance(r, str) else list(r) for r in info.get("approval_flow", [])]
+
+
+def flow_roles_of(info):
+    """approval_flowに含まれる全役割のフラットな一覧。"""
+    return [r for step in flow_steps_of(info) for r in step]
+
+
+def step_label(step_roles):
+    return "・".join(step_roles)
+
+
 # ── 工事マスタ参照API ────────────────────────────────────────────
 @app.route("/api/projects")
 def api_projects():
@@ -2109,7 +2152,7 @@ def api_projects():
 
 
 # ── 通知先（承認者）名簿の管理 ───────────────────────────────────
-NOTIFY_ROLES = ["TL", "GL・BL", "安全検査室"]
+NOTIFY_ROLES = ["TL", "GL", "BL", "安全検査室"]
 
 
 @app.route("/approvers", methods=["GET", "POST"])

@@ -32,7 +32,7 @@
     {% if not edit and info.approval_flow %}
     <h2 style="margin-top:24px;"><span class="accent-bar"></span>提出先（kintone通知）</h2>
     <div class="flex">
-      {% if "TL" in info.approval_flow %}
+      {% if "TL" in flow_roles %}
       <div class="form-row" style="flex:1; min-width:200px;">
         <label>承認するTL</label>
         <select name="notify_tl" {% if notify_users.get("TL") %}required{% endif %}>
@@ -44,16 +44,28 @@
         {% if not notify_users.get("TL") %}<p class="footer-note">名簿が未登録です（トップの名簿設定から登録）</p>{% endif %}
       </div>
       {% endif %}
-      {% if "GL・BL" in info.approval_flow %}
+      {% if "GL" in flow_roles %}
       <div class="form-row" style="flex:1; min-width:200px;">
-        <label>承認するGL・BL</label>
-        <select name="notify_gl" {% if notify_users.get("GL・BL") %}required{% endif %}>
+        <label>承認するGL</label>
+        <select name="notify_gl" {% if notify_users.get("GL") %}required{% endif %}>
           <option value="" selected disabled hidden>選択してください</option>
-          {% for u in notify_users.get("GL・BL", []) %}
+          {% for u in notify_users.get("GL", []) %}
           <option value="{{ u.kintone_code }}" data-koji="{{ u.koji_nos or '' }}">{{ u.display_name }}</option>
           {% endfor %}
         </select>
-        {% if not notify_users.get("GL・BL") %}<p class="footer-note">名簿が未登録です</p>{% endif %}
+        {% if not notify_users.get("GL") %}<p class="footer-note">名簿が未登録です</p>{% endif %}
+      </div>
+      {% endif %}
+      {% if "BL" in flow_roles %}
+      <div class="form-row" style="flex:1; min-width:200px;">
+        <label>承認するBL</label>
+        <select name="notify_bl" {% if notify_users.get("BL") %}required{% endif %}>
+          <option value="" selected disabled hidden>選択してください</option>
+          {% for u in notify_users.get("BL", []) %}
+          <option value="{{ u.kintone_code }}" data-koji="{{ u.koji_nos or '' }}">{{ u.display_name }}</option>
+          {% endfor %}
+        </select>
+        {% if not notify_users.get("BL") %}<p class="footer-note">名簿が未登録です</p>{% endif %}
       </div>
       {% endif %}
       {% if category == 'safety_patrol' %}
@@ -210,7 +222,7 @@
     if (!name) return;
     nameInput.value = name;
     // 担当工事№が登録されている承認者を自動選択
-    ["notify_tl", "notify_gl", "notify_safety"].forEach(function (fieldName) {
+    ["notify_tl", "notify_gl", "notify_bl", "notify_safety"].forEach(function (fieldName) {
       var sel = document.querySelector('select[name="' + fieldName + '"]');
       if (!sel || sel.value) return;
       for (var i = 0; i < sel.options.length; i++) {
