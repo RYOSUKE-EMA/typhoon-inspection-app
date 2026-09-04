@@ -33,6 +33,46 @@ KINTONE_APP_ID = os.environ.get("KINTONE_APP_ID", "5287")
 KINTONE_API_TOKEN = os.environ.get("KINTONE_API_TOKEN", "")
 # 工事マスタ（app269）参照用
 KINTONE_API_TOKEN_269 = os.environ.get("KINTONE_API_TOKEN_269", "")
+# cybozu User API（従業員一覧）用のログイン認証（base64 "user:pass"）
+CYBOZU_AUTH = os.environ.get("CYBOZU_AUTH", "")
+
+_kintone_users_cache = {"data": None, "at": 0.0}
+
+
+def fetch_kintone_users():
+    """cybozu User APIから利用中の全ユーザー（code, 表示名）を取得する。1時間キャッシュ。"""
+    import time as _time
+    if _kintone_users_cache["data"] is not None and _time.time() - _kintone_users_cache["at"] < 3600:
+        return _kintone_users_cache["data"]
+    if not CYBOZU_AUTH:
+        return []
+    users = []
+    offset = 0
+    try:
+        while True:
+            resp = requests.get(
+                f"https://{KINTONE_SUBDOMAIN}.cybozu.com/v1/users.json",
+                headers={"X-Cybozu-Authorization": CYBOZU_AUTH},
+                params={"size": 100, "offset": offset},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            batch = resp.json().get("users", [])
+            if not batch:
+                break
+            for u in batch:
+                if u.get("valid", True):
+                    users.append({"code": u["code"], "name": u.get("name") or u["code"]})
+            if len(batch) < 100:
+                break
+            offset += 100
+        users.sort(key=lambda u: u["name"])
+        _kintone_users_cache["data"] = users
+        _kintone_users_cache["at"] = _time.time()
+        return users
+    except Exception as e:
+        print(f"kintone users fetch failed: {e}")
+        return _kintone_users_cache["data"] or []
 
 # 工事マスタのキャッシュ（サーバレスの同一インスタンス内で10分保持）
 _projects_cache = {"data": None, "at": 0.0}
@@ -2160,10 +2200,17 @@ def approvers():
     if request.method == "POST":
         f = request.form
         role = f.get("role", "").strip()
-        display_name = f.get("display_name", "").strip()
         kintone_code = f.get("kintone_code", "").strip()
         koji_nos = f.get("koji_nos", "").strip()
-        if role in NOTIFY_ROLES and display_name and kintone_code:
+        # 表示名はkintoneの従業員情報（ユーザーAPI）から自動取得
+        display_name = ""
+        for u in fetch_kintone_users():
+            if u["code"] == kintone_code:
+                display_name = u["name"]
+                break
+        if not display_name:
+            display_name = f.get("display_name", "").strip() or kintone_code
+        if role in NOTIFY_ROLES and kintone_code:
             conn = get_db()
             try:
                 db_execute(conn, "INSERT INTO notify_users (role, display_name, kintone_code, koji_nos) VALUES (?,?,?,?)",
@@ -2172,7 +2219,8 @@ def approvers():
             finally:
                 conn.close()
         return redirect(url_for("approvers"))
-    return render_template("approvers.html", roles=NOTIFY_ROLES, users=get_notify_users())
+    return render_template("approvers.html", roles=NOTIFY_ROLES, users=get_notify_users(),
+                           kintone_users=fetch_kintone_users())
 
 
 @app.route("/approvers/<int:user_id>/delete", methods=["POST"])

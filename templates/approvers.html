@@ -2,7 +2,7 @@
 {% block content %}
 <div class="card">
   <h2><span class="accent-bar"></span>承認者・通知先の名簿</h2>
-  <p class="footer-note">報告書の提出・承認時にkintone通知を送る相手を登録します。担当工事№を登録すると、報告書作成時に工事№からTL/GL・BLが自動選択されます。「kintoneログイン名」はkintoneのユーザーコード（メンション時に使われるID）を入力してください。</p>
+  <p class="footer-note">報告書の提出・承認時にkintone通知を送る相手を登録します。担当工事№を登録すると、報告書作成時に工事№からTL/GL・BLが自動選択されます。ユーザーはkintoneの従業員情報から選択でき、表示名は自動で取り込まれます。</p>
 
   {% for role in roles %}
   <h2 style="margin-top:22px;"><span class="accent-bar"></span>{{ role }}</h2>
@@ -40,13 +40,18 @@
           {% for role in roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
         </select>
       </div>
-      <div class="form-row" style="flex:1; min-width:160px;">
-        <label>表示名</label>
-        <input type="text" name="display_name" placeholder="例：山田 太郎" required>
-      </div>
-      <div class="form-row" style="flex:1; min-width:160px;">
-        <label>kintoneログイン名</label>
-        <input type="text" name="kintone_code" placeholder="例：c0114101" required>
+      <div class="form-row" style="flex:2; min-width:240px;">
+        <label>kintoneユーザー</label>
+        {% if kintone_users %}
+        <select name="kintone_code" required>
+          <option value="" selected disabled hidden>ユーザーを選択</option>
+          {% for u in kintone_users %}
+          <option value="{{ u.code }}">{{ u.name }}（{{ u.code }}）</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input type="text" name="kintone_code" placeholder="例：c0114101（ユーザー一覧を取得できないため手入力）" required>
+        {% endif %}
       </div>
       <div class="form-row" style="flex:1; min-width:200px;">
         <label>担当工事№（カンマ区切り・任意）</label>
