@@ -2,18 +2,19 @@
 {% block content %}
 <div class="card">
   <h2><span class="accent-bar"></span>承認者・通知先の名簿</h2>
-  <p class="footer-note">報告書の提出・承認時にkintone通知を送る相手を登録します。「kintoneログイン名」はkintoneのユーザーコード（メンション時に使われるID）を入力してください。</p>
+  <p class="footer-note">報告書の提出・承認時にkintone通知を送る相手を登録します。担当工事№を登録すると、報告書作成時に工事№からTL/GL・BLが自動選択されます。「kintoneログイン名」はkintoneのユーザーコード（メンション時に使われるID）を入力してください。</p>
 
   {% for role in roles %}
   <h2 style="margin-top:22px;"><span class="accent-bar"></span>{{ role }}</h2>
   {% if users.get(role) %}
   <table style="max-width:600px;">
-    <thead><tr><th>表示名</th><th>kintoneログイン名</th><th style="width:80px;"></th></tr></thead>
+    <thead><tr><th>表示名</th><th>kintoneログイン名</th><th>担当工事№</th><th style="width:80px;"></th></tr></thead>
     <tbody>
       {% for u in users[role] %}
       <tr>
         <td>{{ u.display_name }}</td>
         <td>{{ u.kintone_code }}</td>
+        <td>{{ u.koji_nos or "" }}</td>
         <td>
           <form method="post" action="{{ url_for('approvers_delete', user_id=u.id) }}" onsubmit="return confirm('削除しますか？');">
             <button type="submit" class="btn btn-danger btn-sm">削除</button>
@@ -46,6 +47,10 @@
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>kintoneログイン名</label>
         <input type="text" name="kintone_code" placeholder="例：c0114101" required>
+      </div>
+      <div class="form-row" style="flex:1; min-width:200px;">
+        <label>担当工事№（カンマ区切り・任意）</label>
+        <input type="text" name="koji_nos" placeholder="例：81044081,81043081">
       </div>
     </div>
     <button type="submit" class="btn btn-primary">追加する</button>

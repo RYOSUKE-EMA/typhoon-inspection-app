@@ -6,18 +6,23 @@ import requests
 from flask import Flask, render_template, request, redirect, url_for, send_file, abort
 from io import BytesIO
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.pdfgen import canvas
-from pypdf import PdfReader, PdfWriter
-
-pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
-pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
+# PDF系ライブラリ（reportlab/pypdf）はimportが重いため、PDF生成時まで遅延読み込みする
+def _ensure_pdf_libs():
+    global colors, A4, mm, getSampleStyleSheet, ParagraphStyle, pdfmetrics, UnicodeCIDFont
+    global SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, canvas, PdfReader, PdfWriter
+    if "canvas" in globals():
+        return
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.pdfgen import canvas
+    from pypdf import PdfReader, PdfWriter
+    pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
+    pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
 
 # ── 報告書削除用パスワード ──
 DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "0000")
@@ -26,6 +31,59 @@ DELETE_PASSWORD = os.environ.get("DELETE_PASSWORD", "0000")
 KINTONE_SUBDOMAIN = os.environ.get("KINTONE_SUBDOMAIN", "symgrp")
 KINTONE_APP_ID = os.environ.get("KINTONE_APP_ID", "5287")
 KINTONE_API_TOKEN = os.environ.get("KINTONE_API_TOKEN", "")
+# 工事マスタ（app269）参照用
+KINTONE_API_TOKEN_269 = os.environ.get("KINTONE_API_TOKEN_269", "")
+
+# 工事マスタのキャッシュ（サーバレスの同一インスタンス内で10分保持）
+_projects_cache = {"data": None, "at": 0.0}
+
+
+def fetch_active_projects():
+    """建築系部門の稼働中（完成日未入力）工事を工事マスタから取得する。"""
+    import time as _time
+    if _projects_cache["data"] is not None and _time.time() - _projects_cache["at"] < 600:
+        return _projects_cache["data"]
+    if not KINTONE_API_TOKEN_269:
+        return []
+    headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN_269}
+    url = f"https://{KINTONE_SUBDOMAIN}.cybozu.com/k/v1/records.json"
+    projects = []
+    last_id = 0
+    try:
+        while True:
+            params = {
+                "app": 269,
+                "query": f'mbuBumon like "建築" and $id > {last_id} order by $id asc limit 500',
+                "fields[0]": "$id", "fields[1]": "KojiNo", "fields[2]": "KbNo",
+                "fields[3]": "mkbKojiName", "fields[4]": "mkuSYmd",
+            }
+            resp = requests.get(url, headers=headers, params=params, timeout=15)
+            resp.raise_for_status()
+            recs = resp.json()["records"]
+            if not recs:
+                break
+            for r in recs:
+                if r["mkuSYmd"]["value"]:  # 完成日が入っている＝完了済みは除外
+                    continue
+                no = str(r["KojiNo"]["value"] or "").split(".")[0]
+                name = r["mkbKojiName"]["value"] or ""
+                if no and name:
+                    projects.append({"no": no, "name": name})
+            last_id = recs[-1]["$id"]["value"]
+        # 工事№の重複（枝番違い）は先勝ちで除去
+        seen = set()
+        uniq = []
+        for p in projects:
+            if p["no"] not in seen:
+                seen.add(p["no"])
+                uniq.append(p)
+        uniq.sort(key=lambda p: p["no"], reverse=True)
+        _projects_cache["data"] = uniq
+        _projects_cache["at"] = _time.time()
+        return uniq
+    except Exception as e:
+        print(f"project master fetch failed: {e}")
+        return _projects_cache["data"] or []
 
 
 # kintone連携の対象（足場は提出・承認なしのため対象外）
@@ -193,6 +251,7 @@ SAFETY_PATROL_RESULT_POS = (
 
 
 def build_safety_patrol_pdf(report, items):
+    _ensure_pdf_libs()
     page_w, page_h = SAFETY_PATROL_PAGE_W, SAFETY_PATROL_PAGE_H
 
     def y(fitz_y):
@@ -1013,9 +1072,21 @@ def fetchone(cur):
     return cur.fetchone()
 
 
+# スキーマ版数。マイグレーションを追加したら+1する（コールドスタート時の初期化スキップ判定に使用）
+SCHEMA_VERSION = 9
+
+
 def init_db():
     conn = get_db()
     try:
+        # 版数が一致すれば初期化済みとしてスキップ（Neonへの往復を減らし起動を速くする）
+        try:
+            row = fetchone(db_execute(conn, "SELECT v FROM schema_meta LIMIT 1"))
+            if row and row["v"] == SCHEMA_VERSION:
+                return
+        except Exception:
+            conn.rollback() if USE_PG else None
+
         if USE_PG:
             cur = conn.cursor()
             cur.execute("""
@@ -1052,6 +1123,7 @@ def init_db():
                 display_name TEXT NOT NULL,
                 kintone_code TEXT NOT NULL
             )""")
+            cur.execute("ALTER TABLE notify_users ADD COLUMN IF NOT EXISTS koji_nos TEXT")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS report_items (
                 id SERIAL PRIMARY KEY,
@@ -1159,7 +1231,8 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 role TEXT NOT NULL,
                 display_name TEXT NOT NULL,
-                kintone_code TEXT NOT NULL
+                kintone_code TEXT NOT NULL,
+                koji_nos TEXT
             );
             CREATE TABLE IF NOT EXISTS approvals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1196,6 +1269,12 @@ def init_db():
             if "category" not in res_cols:
                 conn.execute("ALTER TABLE resources ADD COLUMN category TEXT NOT NULL DEFAULT 'typhoon'")
             conn.commit()
+
+        # 版数を記録（次回コールドスタートから初期化をスキップ）
+        db_execute(conn, "CREATE TABLE IF NOT EXISTS schema_meta (v INTEGER NOT NULL)")
+        db_execute(conn, "DELETE FROM schema_meta")
+        db_execute(conn, "INSERT INTO schema_meta (v) VALUES (?)", (SCHEMA_VERSION,))
+        conn.commit()
     finally:
         conn.close()
 
@@ -1534,6 +1613,7 @@ def report_pdf(category, report_id):
     finally:
         conn.close()
 
+    _ensure_pdf_libs()
     if category == "safety_patrol":
         buf = build_safety_patrol_pdf(report, items)
         year = (report["inspect_datetime"] or "")[:4]
@@ -2022,6 +2102,12 @@ def api_guide(category):
     }
 
 
+# ── 工事マスタ参照API ────────────────────────────────────────────
+@app.route("/api/projects")
+def api_projects():
+    return {"projects": fetch_active_projects()}
+
+
 # ── 通知先（承認者）名簿の管理 ───────────────────────────────────
 NOTIFY_ROLES = ["TL", "GL・BL", "安全検査室"]
 
@@ -2033,11 +2119,12 @@ def approvers():
         role = f.get("role", "").strip()
         display_name = f.get("display_name", "").strip()
         kintone_code = f.get("kintone_code", "").strip()
+        koji_nos = f.get("koji_nos", "").strip()
         if role in NOTIFY_ROLES and display_name and kintone_code:
             conn = get_db()
             try:
-                db_execute(conn, "INSERT INTO notify_users (role, display_name, kintone_code) VALUES (?,?,?)",
-                           (role, display_name, kintone_code))
+                db_execute(conn, "INSERT INTO notify_users (role, display_name, kintone_code, koji_nos) VALUES (?,?,?,?)",
+                           (role, display_name, kintone_code, koji_nos))
                 conn.commit()
             finally:
                 conn.close()

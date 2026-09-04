@@ -7,13 +7,15 @@
     {% if subtype %}<input type="hidden" name="subtype" value="{{ subtype }}">{% endif %}
     {% if kintone_user %}<input type="hidden" name="kintone_user" value="{{ kintone_user }}">{% endif %}
     <div class="flex">
-      <div class="form-row" style="flex:2; min-width:220px;">
-        <label>工事名</label>
-        <input type="text" name="project_name" value="{{ edit.project_name if edit else pf.get('project_name', '') }}" required>
-      </div>
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>工事ナンバー</label>
-        <input type="text" name="project_no" value="{{ edit.project_no if edit else pf.get('project_no', '') }}">
+        <input type="text" name="project_no" id="project-no" list="project-list" autocomplete="off"
+               placeholder="入力または選択" value="{{ edit.project_no if edit else pf.get('project_no', '') }}">
+        <datalist id="project-list"></datalist>
+      </div>
+      <div class="form-row" style="flex:2; min-width:220px;">
+        <label>工事名</label>
+        <input type="text" name="project_name" id="project-name" value="{{ edit.project_name if edit else pf.get('project_name', '') }}" required>
       </div>
     </div>
     <div class="flex">
@@ -36,7 +38,7 @@
         <select name="notify_tl" {% if notify_users.get("TL") %}required{% endif %}>
           <option value="" selected disabled hidden>選択してください</option>
           {% for u in notify_users.get("TL", []) %}
-          <option value="{{ u.kintone_code }}">{{ u.display_name }}</option>
+          <option value="{{ u.kintone_code }}" data-koji="{{ u.koji_nos or '' }}">{{ u.display_name }}</option>
           {% endfor %}
         </select>
         {% if not notify_users.get("TL") %}<p class="footer-note">名簿が未登録です（トップの名簿設定から登録）</p>{% endif %}
@@ -48,7 +50,7 @@
         <select name="notify_gl" {% if notify_users.get("GL・BL") %}required{% endif %}>
           <option value="" selected disabled hidden>選択してください</option>
           {% for u in notify_users.get("GL・BL", []) %}
-          <option value="{{ u.kintone_code }}">{{ u.display_name }}</option>
+          <option value="{{ u.kintone_code }}" data-koji="{{ u.koji_nos or '' }}">{{ u.display_name }}</option>
           {% endfor %}
         </select>
         {% if not notify_users.get("GL・BL") %}<p class="footer-note">名簿が未登録です</p>{% endif %}
@@ -60,7 +62,7 @@
         <select name="notify_safety" {% if notify_users.get("安全検査室") %}required{% endif %}>
           <option value="" selected disabled hidden>選択してください</option>
           {% for u in notify_users.get("安全検査室", []) %}
-          <option value="{{ u.kintone_code }}">{{ u.display_name }}</option>
+          <option value="{{ u.kintone_code }}" data-koji="{{ u.koji_nos or '' }}">{{ u.display_name }}</option>
           {% endfor %}
         </select>
         {% if not notify_users.get("安全検査室") %}<p class="footer-note">名簿が未登録です</p>{% endif %}
@@ -183,4 +185,45 @@
     </div>
   </form>
 </div>
+
+<script>
+(function () {
+  var noInput = document.getElementById("project-no");
+  var nameInput = document.getElementById("project-name");
+  var datalist = document.getElementById("project-list");
+  if (!noInput) return;
+  var projects = {};
+
+  fetch("/api/projects").then(function (r) { return r.json(); }).then(function (d) {
+    (d.projects || []).forEach(function (p) {
+      projects[p.no] = p.name;
+      var opt = document.createElement("option");
+      opt.value = p.no;
+      opt.label = p.name;
+      datalist.appendChild(opt);
+    });
+  }).catch(function () {});
+
+  function applyProject() {
+    var no = noInput.value.trim();
+    var name = projects[no];
+    if (!name) return;
+    nameInput.value = name;
+    // 担当工事№が登録されている承認者を自動選択
+    ["notify_tl", "notify_gl", "notify_safety"].forEach(function (fieldName) {
+      var sel = document.querySelector('select[name="' + fieldName + '"]');
+      if (!sel || sel.value) return;
+      for (var i = 0; i < sel.options.length; i++) {
+        var koji = sel.options[i].dataset ? sel.options[i].dataset.koji : "";
+        if (koji && koji.split(/[،,、\s]+/).indexOf(no) !== -1) {
+          sel.value = sel.options[i].value;
+          break;
+        }
+      }
+    });
+  }
+  noInput.addEventListener("change", applyProject);
+  noInput.addEventListener("input", applyProject);
+})();
+</script>
 {% endblock %}
