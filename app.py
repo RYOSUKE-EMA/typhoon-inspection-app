@@ -1,4 +1,5 @@
 import os
+import re
 import mimetypes
 from datetime import datetime
 
@@ -2200,16 +2201,24 @@ def approvers():
     if request.method == "POST":
         f = request.form
         role = f.get("role", "").strip()
-        kintone_code = f.get("kintone_code", "").strip()
+        pick = f.get("kintone_pick", "").strip() or f.get("kintone_code", "").strip()
         koji_nos = f.get("koji_nos", "").strip()
-        # 表示名はkintoneの従業員情報（ユーザーAPI）から自動取得
+        # 「表示名（code）」形式・code直入力・名前だけ、のいずれからも特定する
+        kintone_code = ""
         display_name = ""
-        for u in fetch_kintone_users():
-            if u["code"] == kintone_code:
+        users = fetch_kintone_users()
+        m = re.search(r"（([^）]+)）\s*$", pick)
+        if m:
+            kintone_code = m.group(1).strip()
+        for u in users:
+            if (kintone_code and u["code"] == kintone_code) or (not kintone_code and pick in (u["code"], u["name"])):
+                kintone_code = u["code"]
                 display_name = u["name"]
                 break
+        if not kintone_code:
+            kintone_code = pick
         if not display_name:
-            display_name = f.get("display_name", "").strip() or kintone_code
+            display_name = pick or kintone_code
         if role in NOTIFY_ROLES and kintone_code:
             conn = get_db()
             try:

@@ -41,16 +41,17 @@
         </select>
       </div>
       <div class="form-row" style="flex:2; min-width:240px;">
-        <label>kintoneユーザー</label>
+        <label>kintoneユーザー（名前の一部を入力すると候補が出ます）</label>
         {% if kintone_users %}
-        <select name="kintone_code" required>
-          <option value="" selected disabled hidden>ユーザーを選択</option>
+        <input type="text" name="kintone_pick" list="kintone-user-list" autocomplete="off"
+               placeholder="例：江間 と入力して候補から選択" required>
+        <datalist id="kintone-user-list">
           {% for u in kintone_users %}
-          <option value="{{ u.code }}">{{ u.name }}（{{ u.code }}）</option>
+          <option value="{{ u.name }}（{{ u.code }}）"></option>
           {% endfor %}
-        </select>
+        </datalist>
         {% else %}
-        <input type="text" name="kintone_code" placeholder="例：c0114101（ユーザー一覧を取得できないため手入力）" required>
+        <input type="text" name="kintone_pick" placeholder="例：c0114101（ユーザー一覧を取得できないため手入力）" required>
         {% endif %}
       </div>
       <div class="form-row" style="flex:1; min-width:200px;">
