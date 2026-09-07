@@ -2192,6 +2192,35 @@ def api_projects():
     return {"projects": fetch_active_projects()}
 
 
+@app.route("/api/perf")
+def api_perf():
+    """遅延の内訳計測用（DB接続時間・クエリ時間・DBホスト種別）。"""
+    import time as t
+    r = {"use_pg": USE_PG}
+    if USE_PG:
+        host = DATABASE_URL.split("@")[-1].split("/")[0]
+        r["db_host_kind"] = "pooler" if "pooler" in host else "direct"
+        t0 = t.time()
+        conn = psycopg2.connect(DATABASE_URL)
+        r["connect_sec"] = round(t.time() - t0, 3)
+        try:
+            cur = conn.cursor()
+            t0 = t.time()
+            cur.execute("SELECT COUNT(*) FROM reports")
+            cur.fetchone()
+            r["query_sec"] = round(t.time() - t0, 3)
+            t0 = t.time()
+            for _ in range(3):
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            r["three_pings_sec"] = round(t.time() - t0, 3)
+        finally:
+            conn.close()
+    return r
+
+
+
+
 # ── 通知先（承認者）名簿の管理 ───────────────────────────────────
 NOTIFY_ROLES = ["TL", "GL", "BL", "安全検査室"]
 
