@@ -1086,9 +1086,49 @@ def get_inspection_type(category):
 
 
 # ── DB接続 ───────────────────────────────────────────────────────
+class _PooledPg:
+    """close()で実接続を閉じずに使い回すラッパー（サーバレスのウォーム間で接続確立を省く）。"""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        try:
+            self._conn.rollback()  # トランザクション状態を毎回リセット
+        except Exception:
+            _discard_pg_conn()
+
+
+_pg_conn = None
+
+
+def _discard_pg_conn():
+    global _pg_conn
+    try:
+        if _pg_conn is not None:
+            _pg_conn.close()
+    except Exception:
+        pass
+    _pg_conn = None
+
+
 def get_db():
+    global _pg_conn
     if USE_PG:
-        return psycopg2.connect(DATABASE_URL)
+        if _pg_conn is not None:
+            try:
+                cur = _pg_conn.cursor()
+                cur.execute("SELECT 1")
+                cur.fetchone()
+                cur.close()
+                return _PooledPg(_pg_conn)
+            except Exception:
+                _discard_pg_conn()
+        _pg_conn = psycopg2.connect(DATABASE_URL)
+        return _PooledPg(_pg_conn)
     else:
         conn = sqlite3.connect(SQLITE_PATH)
         conn.row_factory = sqlite3.Row
@@ -1349,13 +1389,12 @@ RELEASED_CATEGORIES = ("typhoon",)
 def index():
     conn = get_db()
     try:
-        counts = {}
-        for category, info in INSPECTION_TYPES.items():
-            if not info.get("approval_flow"):
-                counts[category] = 0
-                continue
-            row = fetchone(db_execute(conn, "SELECT COUNT(*) AS c FROM reports WHERE category=? AND status<>?", (category, "確認済")))
-            counts[category] = row["c"]
+        counts = {category: 0 for category in INSPECTION_TYPES}
+        rows = fetchall(db_execute(conn,
+            "SELECT category, COUNT(*) AS c FROM reports WHERE status<>? GROUP BY category", ("確認済",)))
+        for r in rows:
+            if r["category"] in counts and INSPECTION_TYPES[r["category"]].get("approval_flow"):
+                counts[r["category"]] = r["c"]
     finally:
         conn.close()
     kintone_user = request.args.get("kintone_user", "").strip()
