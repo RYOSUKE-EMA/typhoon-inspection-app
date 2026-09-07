@@ -2200,6 +2200,7 @@ def api_perf():
     if USE_PG:
         host = DATABASE_URL.split("@")[-1].split("/")[0]
         r["db_host_kind"] = "pooler" if "pooler" in host else "direct"
+        r["db_region"] = ".".join(host.split(".")[1:3])
         t0 = t.time()
         conn = psycopg2.connect(DATABASE_URL)
         r["connect_sec"] = round(t.time() - t0, 3)
