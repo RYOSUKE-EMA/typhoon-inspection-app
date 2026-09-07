@@ -305,6 +305,12 @@
   #guide-modal .g-image { width: 100%; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 16px; display: block; }
   #guide-modal .g-desc { font-size: 0.92rem; line-height: 1.75; white-space: pre-wrap; color: var(--ink); }
   #guide-modal .g-empty { color: var(--ink-soft); font-size: 0.9rem; }
+  /* kintone埋め込み時：iframeは中身の高さに追従するため、固定配置の要素は親の表示範囲に合わせる */
+  html.embedded #submit-overlay, html.embedded #guide-modal {
+    align-items: flex-start;
+    padding-top: calc(var(--embed-top, 0px) + 60px);
+  }
+  html.embedded #guide-modal .g-box { max-height: calc(var(--embed-vh, 100vh) * 0.85); }
 </style>
 {% block extra_style %}{% endblock %}
 </head>
@@ -340,6 +346,33 @@
 </div>
 
 <script>
+// kintone埋め込み時：中身の高さを親へ通知して二重スクロールをなくす
+(function () {
+  if (window.parent === window) return;
+  var PARENT = "https://symgrp.cybozu.com";
+  document.documentElement.classList.add("embedded");
+  var last = 0;
+  function post() {
+    var h = document.body.offsetHeight + 24;
+    if (Math.abs(h - last) < 2) return;
+    last = h;
+    window.parent.postMessage({ type: "tenken-height", height: h }, PARENT);
+  }
+  window.addEventListener("load", function () {
+    post();
+    window.parent.postMessage({ type: "tenken-loaded" }, PARENT);
+  });
+  if (window.ResizeObserver) { new ResizeObserver(post).observe(document.body); }
+  document.addEventListener("toggle", post, true);
+  window.addEventListener("message", function (e) {
+    if (e.origin !== PARENT || !e.data) return;
+    if (e.data.type === "tenken-viewport") {
+      document.documentElement.style.setProperty("--embed-top", e.data.top + "px");
+      document.documentElement.style.setProperty("--embed-vh", e.data.height + "px");
+    }
+  });
+})();
+
 // ページ遷移ロック：リンククリック時にローディング画面を出し、連打を防ぐ
 document.addEventListener("click", function (e) {
   var a = e.target.closest("a");
