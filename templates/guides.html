@@ -9,7 +9,7 @@
     <span class="filter-label">足場の種類</span>
     {% for key, sub in subtypes.items() %}
     <a class="btn btn-sm {% if key == subtype %}btn-primary{% else %}btn-secondary{% endif %}"
-       href="{{ url_for('guides_edit', category=category, subtype=key) }}">{{ sub.label }}</a>
+       href="{{ url_for('guides_edit', category=category, subtype=key, kintone_user=kintone_user or '', kintone_code=kintone_code or '') }}">{{ sub.label }}</a>
     {% endfor %}
   </div>
   {% endif %}
@@ -36,6 +36,8 @@
               onsubmit="return confirm('この画像を削除しますか？');">
           <input type="hidden" name="category" value="{{ category }}">
           <input type="hidden" name="subtype" value="{{ subtype }}">
+          <input type="hidden" name="kintone_user" value="{{ kintone_user or '' }}">
+          <input type="hidden" name="kintone_code" value="{{ kintone_code or '' }}">
           <button type="submit" class="btn btn-danger btn-sm">削除</button>
         </form>
       </div>
@@ -47,6 +49,8 @@
   <form method="post" action="{{ url_for('guides_save', category=category) }}" enctype="multipart/form-data" data-lock>
     <input type="hidden" name="subtype" value="{{ subtype }}">
     <input type="hidden" name="item_name" value="{{ item }}">
+    <input type="hidden" name="kintone_user" value="{{ kintone_user or '' }}">
+    <input type="hidden" name="kintone_code" value="{{ kintone_code or '' }}">
     <div class="flex" style="align-items:flex-start;">
       <div style="flex:1; min-width:220px;">
         <div class="form-row">

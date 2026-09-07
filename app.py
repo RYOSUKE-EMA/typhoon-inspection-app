@@ -1683,7 +1683,8 @@ def reports_list(category):
 
     mine_flags = {r["id"]: is_mine(r) for r in reports}
     return render_template("reports.html", category=category, info=info, reports=reports, groups=groups,
-                           pq=_project_query(), role_scope=role_scope, mine_flags=mine_flags)
+                           pq=_project_query(), role_scope=role_scope, mine_flags=mine_flags,
+                           can_edit=_is_editor(kintone_code, kintone_user))
 
 
 # ── 点検報告：詳細・上司確認 ──────────────────────────────────────
@@ -2019,12 +2020,15 @@ def resources_list(category):
         resources = fetchall(db_execute(conn, "SELECT id, title, description, filename, mimetype, uploaded_by, uploaded_at FROM resources WHERE category=? ORDER BY id DESC", (category,)))
     finally:
         conn.close()
-    return render_template("resources.html", category=category, info=info, resources=resources)
+    return render_template("resources.html", category=category, info=info, resources=resources,
+                           can_edit=_editor_from_request(), pq=_project_query())
 
 
 @app.route("/resources/<category>/upload", methods=["POST"])
 def upload_resource(category):
     get_inspection_type(category)
+    if not _editor_from_request():
+        return redirect(url_for("resources_list", category=category))
     f = request.form
     title = f.get("title", "").strip()
     description = f.get("description", "").strip()
@@ -2068,6 +2072,8 @@ def download_resource(resource_id):
 
 @app.route("/resources/<int:resource_id>/delete", methods=["POST"])
 def delete_resource(resource_id):
+    if not _editor_from_request():
+        return redirect(url_for("index"))
     conn = get_db()
     try:
         res = fetchone(db_execute(conn, "SELECT category FROM resources WHERE id=?", (resource_id,)))
@@ -2133,10 +2139,15 @@ def guides_edit(category):
         if subtype not in subtypes:
             abort(404)
         subtype_label = subtypes[subtype]["label"]
+    if not _editor_from_request():
+        return ("<meta charset='utf-8'><p>項目の手引きの編集は、承認者名簿に登録されたTL以上のメンバーのみ行えます。</p>"
+                "<p><a href='javascript:history.back()'>戻る</a></p>", 403)
     checklist = _checklist_for(info, subtype)
     guides = _guides_map(category, subtype)
     return render_template("guides.html", category=category, info=info, checklist=checklist,
-                           guides=guides, subtypes=subtypes, subtype=subtype, subtype_label=subtype_label)
+                           guides=guides, subtypes=subtypes, subtype=subtype, subtype_label=subtype_label,
+                           kintone_user=request.args.get("kintone_user", "").strip(),
+                           kintone_code=request.args.get("kintone_code", "").strip())
 
 
 def _get_or_create_guide(conn, category, subtype, item_name):
@@ -2166,6 +2177,8 @@ def _add_guide_image(conn, guide_id, data, mimetype):
 @app.route("/guides/<category>/save", methods=["POST"])
 def guides_save(category):
     get_inspection_type(category)
+    if not _editor_from_request():
+        return redirect(url_for("reports_list", category=category))
     f = request.form
     subtype = f.get("subtype", "").strip()
     item_name = f.get("item_name", "").strip()
@@ -2195,6 +2208,8 @@ def guides_save(category):
 
 @app.route("/guide-image/<int:image_id>/delete", methods=["POST"])
 def guide_image_delete(image_id):
+    if not _editor_from_request():
+        return redirect(url_for("index"))
     category = request.form.get("category", "")
     subtype = request.form.get("subtype", "")
     conn = get_db()
@@ -2240,6 +2255,21 @@ def api_guide(category):
         "description": row["description"] or "",
         "image_urls": [url_for("guide_image", image_id=i) for i in image_ids],
     }
+
+
+def _is_editor(kintone_code, kintone_user=""):
+    """資料集・手引きの編集権限（TL以上＝承認者名簿の登録者、または開発者）。"""
+    if kintone_user and any(d in kintone_user for d in DEV_USERS):
+        return True
+    if not kintone_code:
+        return False
+    roster = get_notify_users()
+    return any(kintone_code in {u["kintone_code"] for u in us} for us in roster.values())
+
+
+def _editor_from_request():
+    src = request.form if request.method == "POST" else request.args
+    return _is_editor(src.get("kintone_code", "").strip(), src.get("kintone_user", "").strip())
 
 
 def _assigned_code(report, role):

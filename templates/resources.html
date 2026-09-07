@@ -26,9 +26,13 @@
         <td>{{ r.uploaded_at | replace("T", " ") }}</td>
         <td><a class="btn btn-primary btn-sm" href="{{ url_for('download_resource', resource_id=r.id) }}" target="_blank">開く</a></td>
         <td>
+          {% if can_edit %}
           <form method="post" action="{{ url_for('delete_resource', resource_id=r.id) }}" onsubmit="return confirm('削除しますか？');">
+            <input type="hidden" name="kintone_user" value="{{ pq.get('kintone_user', '') if pq else '' }}">
+            <input type="hidden" name="kintone_code" value="{{ pq.get('kintone_code', '') if pq else '' }}">
             <button type="submit" class="btn btn-secondary btn-sm">削除</button>
           </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -39,9 +43,12 @@
   {% endif %}
 </div>
 
+{% if can_edit %}
 <div class="card">
   <h2><span class="accent-bar"></span>資料を追加</h2>
   <form method="post" action="{{ url_for('upload_resource', category=category) }}" enctype="multipart/form-data">
+    <input type="hidden" name="kintone_user" value="{{ pq.get('kintone_user', '') if pq else '' }}">
+    <input type="hidden" name="kintone_code" value="{{ pq.get('kintone_code', '') if pq else '' }}">
     <div class="form-row">
       <label>タイトル</label>
       <input type="text" name="title" required>
@@ -61,6 +68,7 @@
     <button type="submit" class="btn btn-primary">登録</button>
   </form>
 </div>
+{% endif %}
 
 <div class="flex">
   <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}">一覧に戻る</a>
