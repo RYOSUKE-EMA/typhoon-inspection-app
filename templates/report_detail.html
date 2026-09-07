@@ -86,9 +86,12 @@
           <tr><th>承認日時</th><td>{{ a.approved_at | replace("T", " ") }}</td></tr>
           <tr><th>コメント</th><td>{{ a.comment or "" }}</td></tr>
         </table>
+        {% elif current_step == step_idx and not can_approve.get(role) %}
+        <p class="footer-note">担当の{{ role }}のみ承認できます（承認待ち）。</p>
         {% elif current_step == step_idx %}
         <form method="post" action="{{ url_for('approve_report', category=category, report_id=report.id) }}" data-lock>
           <input type="hidden" name="kintone_user" value="{{ kintone_user or '' }}">
+          <input type="hidden" name="kintone_code" value="{{ kintone_code or '' }}">
           <input type="hidden" name="role" value="{{ role }}">
           {% if kintone_user %}
           <div class="form-row">

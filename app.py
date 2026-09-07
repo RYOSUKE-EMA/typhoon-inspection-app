@@ -1372,7 +1372,7 @@ def to_bytes(data):
 # ポータル等から渡される工事情報を、画面遷移中もリンクへ引き継ぐためのクエリ
 def _project_query():
     pq = {}
-    for k in ("project_name", "project_no", "inspector", "site_manager", "kintone_user"):
+    for k in ("project_name", "project_no", "inspector", "site_manager", "kintone_user", "kintone_code"):
         v = request.args.get(k, "").strip()
         if v:
             pq[k] = v
@@ -1659,7 +1659,31 @@ def reports_list(category):
                 label = "点検日未設定"
             groups.append({"label": label, "reports": group_reports})
 
-    return render_template("reports.html", category=category, info=info, reports=reports, groups=groups, pq=_project_query())
+    # 役割に応じた初期表示範囲：一般=自分の提出分／TL=自分が承認担当の分／GL・BL・安全検査室・開発者=全件
+    kintone_user = request.args.get("kintone_user", "").strip()
+    kintone_code = request.args.get("kintone_code", "").strip()
+    role_scope = "all"
+    if kintone_code:
+        roster = get_notify_users()
+        codes = {role: {u["kintone_code"] for u in us} for role, us in roster.items()}
+        if kintone_code in codes.get("GL", set()) | codes.get("BL", set()) | codes.get("安全検査室", set()) \
+                or any(d in kintone_user for d in DEV_USERS):
+            role_scope = "all"
+        elif kintone_code in codes.get("TL", set()):
+            role_scope = "tl"
+        else:
+            role_scope = "self"
+
+    def is_mine(r):
+        if r["submitted_by"] and kintone_user and r["submitted_by"] == kintone_user:
+            return True
+        if role_scope == "tl" and (r["notify_tl"] or "") == kintone_code:
+            return True
+        return False
+
+    mine_flags = {r["id"]: is_mine(r) for r in reports}
+    return render_template("reports.html", category=category, info=info, reports=reports, groups=groups,
+                           pq=_project_query(), role_scope=role_scope, mine_flags=mine_flags)
 
 
 # ── 点検報告：詳細・上司確認 ──────────────────────────────────────
@@ -1690,7 +1714,9 @@ def report_detail(category, report_id):
                            guide_names=_guide_item_names(category, report["subtype"] or ""),
                            flow=steps, steps=steps, approvals=approvals, approvals_map=approvals_map,
                            current_step=current_step, flow_label=flow_label,
-                           kintone_user=request.args.get("kintone_user", "").strip())
+                           kintone_user=request.args.get("kintone_user", "").strip(),
+                           kintone_code=request.args.get("kintone_code", "").strip(),
+                           can_approve=_can_approve_map(report, request.args.get("kintone_code", "").strip()))
 
 
 @app.route("/reports/<category>/<int:report_id>/pdf")
@@ -1918,6 +1944,11 @@ def approve_report(category, report_id):
                 break
         # 全段完了済み、または指定roleが現在の段で承認可能でなければ何もしない
         if current is None or role not in steps[current] or (current, role) in done:
+            return redirect(url_for("report_detail", category=category, report_id=report_id,
+                                    kintone_user=f.get("kintone_user", "")))
+        # 担当者が指定されている役割は、本人（kintoneログイン名一致）のみ承認可
+        assigned = _assigned_code(report, role)
+        if assigned and f.get("kintone_code", "").strip() != assigned:
             return redirect(url_for("report_detail", category=category, report_id=report_id,
                                     kintone_user=f.get("kintone_user", "")))
 
@@ -2209,6 +2240,21 @@ def api_guide(category):
         "description": row["description"] or "",
         "image_urls": [url_for("guide_image", image_id=i) for i in image_ids],
     }
+
+
+def _assigned_code(report, role):
+    """報告書でその役割に指定された承認者のkintoneログイン名（未指定なら空）。"""
+    return {"TL": report["notify_tl"], "GL": report["notify_gl"], "BL": report["notify_bl"]}.get(role) or ""
+
+
+def _can_approve_map(report, kintone_code):
+    """{role: 承認操作を表示してよいか}。担当が指定されていれば本人のみ、未指定なら誰でも可。"""
+    result = {}
+    for role in ("TL", "GL", "BL"):
+        assigned = _assigned_code(report, role)
+        result[role] = (not assigned) or (kintone_code == assigned)
+    result["確認"] = True  # 旧フロー互換
+    return result
 
 
 def flow_steps_of(info):
