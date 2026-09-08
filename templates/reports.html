@@ -48,7 +48,7 @@
         </thead>
         <tbody>
           {% for r in group.reports %}
-          <tr class="report-row" data-mine="{{ 1 if mine_flags.get(r.id) else 0 }}" data-search="{{ (r.project_no ~ ' ' ~ r.project_name ~ ' ' ~ r.inspector)|lower }}">
+          <tr class="report-row" data-href="{{ url_for('report_detail', category=category, report_id=r.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}" style="cursor:pointer;" data-mine="{{ 1 if mine_flags.get(r.id) else 0 }}" data-search="{{ (r.project_no ~ ' ' ~ r.project_name ~ ' ' ~ r.inspector)|lower }}">
             <td>{{ r.project_no }}</td>
             <td>{{ r.project_name }}</td>
             {% if info.subtypes %}
@@ -116,6 +116,15 @@
 
     noMatch.style.display = anyVisible ? "none" : "";
   }
+
+  // 行クリックで詳細へ（ボタン・リンク自体のクリックは従来通り）
+  document.querySelectorAll(".report-row[data-href]").forEach(function (row) {
+    row.addEventListener("click", function (e) {
+      if (e.target.closest("a, button, input, select")) return;
+      var link = row.querySelector("a.btn");
+      if (link) link.click(); else window.location.href = row.dataset.href;
+    });
+  });
 
   search.addEventListener("input", apply);
   monthFilter.addEventListener("change", apply);
