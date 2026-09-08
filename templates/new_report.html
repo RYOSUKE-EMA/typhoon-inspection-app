@@ -8,11 +8,13 @@
     {% if kintone_user %}<input type="hidden" name="kintone_user" value="{{ kintone_user }}">{% endif %}
     {% if kintone_code %}<input type="hidden" name="kintone_code" value="{{ kintone_code }}">{% endif %}
     <div class="flex">
-      <div class="form-row" style="flex:1; min-width:160px;">
-        <label>工事ナンバー</label>
-        <input type="text" name="project_no" id="project-no" list="project-list" autocomplete="off"
-               placeholder="入力または選択" value="{{ edit.project_no if edit else pf.get('project_no', '') }}">
-        <datalist id="project-list"></datalist>
+      <div class="form-row" style="flex:1; min-width:200px; position:relative;">
+        <label>工事ナンバー（№・工事名で検索）</label>
+        <input type="text" name="project_no" id="project-no" autocomplete="off"
+               placeholder="№か工事名の一部を入力" value="{{ edit.project_no if edit else pf.get('project_no', '') }}">
+        <div id="project-suggest" style="display:none; position:absolute; left:0; right:0; top:100%; z-index:50;
+             background:#fff; border:1px solid var(--line); border-radius:3px; box-shadow:0 6px 20px rgba(0,0,0,.12);
+             max-height:280px; overflow-y:auto;"></div>
       </div>
       <div class="form-row" style="flex:2; min-width:220px;">
         <label>工事名</label>
@@ -203,19 +205,45 @@
 (function () {
   var noInput = document.getElementById("project-no");
   var nameInput = document.getElementById("project-name");
-  var datalist = document.getElementById("project-list");
+  var suggest = document.getElementById("project-suggest");
   if (!noInput) return;
   var projects = {};
+  var list = [];
 
   fetch("/api/projects").then(function (r) { return r.json(); }).then(function (d) {
-    (d.projects || []).forEach(function (p) {
-      projects[p.no] = p.name;
-      var opt = document.createElement("option");
-      opt.value = p.no;
-      opt.label = p.name;
-      datalist.appendChild(opt);
-    });
+    list = d.projects || [];
+    list.forEach(function (p) { projects[p.no] = p.name; });
   }).catch(function () {});
+
+  // 自前の候補リスト（№・工事名の部分一致、上位20件）
+  function renderSuggest() {
+    var q = noInput.value.trim().toLowerCase();
+    if (!q || !list.length) { suggest.style.display = "none"; return; }
+    var hits = list.filter(function (p) {
+      return p.no.indexOf(q) !== -1 || p.name.toLowerCase().indexOf(q) !== -1;
+    }).slice(0, 20);
+    if (!hits.length) { suggest.style.display = "none"; return; }
+    suggest.innerHTML = "";
+    hits.forEach(function (p) {
+      var row = document.createElement("div");
+      row.style.cssText = "padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--line-soft); font-size:0.88rem;";
+      row.innerHTML = '<span style="font-weight:700; margin-right:10px;">' + p.no + '</span><span>' + p.name + '</span>';
+      row.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        noInput.value = p.no;
+        suggest.style.display = "none";
+        applyProject();
+      });
+      row.addEventListener("mouseenter", function () { row.style.background = "#faf6f5"; });
+      row.addEventListener("mouseleave", function () { row.style.background = ""; });
+      suggest.appendChild(row);
+    });
+    suggest.style.display = "block";
+  }
+  noInput.addEventListener("input", renderSuggest);
+  noInput.addEventListener("focus", renderSuggest);
+  noInput.addEventListener("blur", function () { setTimeout(function () { suggest.style.display = "none"; }, 150); });
+  noInput.addEventListener("keydown", function (e) { if (e.key === "Escape") suggest.style.display = "none"; });
 
   function applyProject() {
     var no = noInput.value.trim();
