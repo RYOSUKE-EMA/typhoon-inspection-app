@@ -230,6 +230,21 @@
         var koji = sel.options[i].dataset ? sel.options[i].dataset.koji : "";
         if (koji && koji.split(/[،,、\s]+/).indexOf(no) !== -1) {
           sel.value = sel.options[i].value;
+          // 自動選択されたことを明示（見落とし防止）
+          sel.style.borderColor = "#b3382c";
+          sel.style.background = "#fbeeec";
+          var note = sel.parentNode.querySelector(".auto-note");
+          if (!note) {
+            note = document.createElement("p");
+            note.className = "footer-note auto-note";
+            note.style.color = "#b3382c";
+            sel.parentNode.appendChild(note);
+          }
+          note.textContent = "工事№の担当として「" + sel.options[i].textContent + "」を自動選択しました。違う場合は変更してください。";
+          sel.addEventListener("change", function () {
+            this.style.borderColor = ""; this.style.background = "";
+            var n = this.parentNode.querySelector(".auto-note"); if (n) n.remove();
+          }, { once: true });
           break;
         }
       }

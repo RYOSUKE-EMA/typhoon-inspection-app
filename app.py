@@ -1376,6 +1376,11 @@ def _kintone_args():
     return {k: src.get(k, "").strip() for k in ("kintone_user", "kintone_code") if src.get(k, "").strip()}
 
 
+@app.context_processor
+def _inject_pq():
+    return {"pq": _project_query()}
+
+
 def _project_query():
     pq = {}
     for k in ("project_name", "project_no", "inspector", "site_manager", "kintone_user", "kintone_code"):
@@ -1720,7 +1725,15 @@ def report_detail(category, report_id):
             current_step = idx
             break
     flow_label = " → ".join(step_label(s) for s in steps)
+    # 提出先（通知先）の表示名
+    code_to_name = {u["kintone_code"]: u["display_name"] for us in get_notify_users().values() for u in us}
+    notify_names = []
+    for label, col in (("TL", "notify_tl"), ("GL", "notify_gl"), ("BL", "notify_bl"), ("安全検査室", "notify_safety")):
+        code = report[col] if col in report.keys() else None
+        if code:
+            notify_names.append(f"{label}：{code_to_name.get(code, code)}")
     return render_template("report_detail.html", category=category, info=info, report=report, items=items, legend=RESULT_LEGEND,
+                           notify_names=notify_names,
                            guide_names=_guide_item_names(category, report["subtype"] or ""),
                            flow=steps, steps=steps, approvals=approvals, approvals_map=approvals_map,
                            current_step=current_step, flow_label=flow_label,

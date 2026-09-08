@@ -71,6 +71,6 @@
 {% endif %}
 
 <div class="flex">
-  <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}">一覧に戻る</a>
+  <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">一覧に戻る</a>
 </div>
 {% endblock %}

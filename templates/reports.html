@@ -8,7 +8,7 @@
     {% if can_edit %}
     <a class="btn btn-secondary" href="{{ url_for('guides_edit', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">項目の手引き編集</a>
     {% endif %}
-    <a class="btn btn-secondary" href="{{ url_for('index') }}">トップに戻る</a>
+    <a class="btn btn-secondary" href="{{ url_for('index') }}{% if pq %}?{{ pq|urlencode }}{% endif %}">トップに戻る</a>
   </div>
 
   {% if groups %}

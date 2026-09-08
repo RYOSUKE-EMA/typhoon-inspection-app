@@ -64,6 +64,6 @@
 </div>
 
 <div class="flex">
-  <a class="btn btn-secondary" href="{{ url_for('index') }}">トップに戻る</a>
+  <a class="btn btn-secondary" href="{{ url_for('index') }}{% if pq %}?{{ pq|urlencode }}{% endif %}">トップに戻る</a>
 </div>
 {% endblock %}

@@ -20,6 +20,9 @@
     <tr><th>対象期間</th><td>{{ report.report_month ~ "月 " ~ report.report_period if report.report_month else "" }}</td></tr>
     <tr><th>第○回</th><td>{{ report.report_round or "" }}</td></tr>
     {% endif %}
+    {% if notify_names %}
+    <tr><th>提出先（通知先）</th><td>{{ notify_names | join("　／　") }}</td></tr>
+    {% endif %}
     {% if flow %}
     <tr><th>状態</th><td>
       {% if report.status == '確認済' %}
