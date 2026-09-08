@@ -1370,6 +1370,12 @@ def to_bytes(data):
 
 # ── トップページ ─────────────────────────────────────────────────
 # ポータル等から渡される工事情報を、画面遷移中もリンクへ引き継ぐためのクエリ
+def _kintone_args():
+    """kintoneログイン情報（表示名・ログイン名）をPOST/GETから取り出し、リダイレクト先へ引き継ぐ。"""
+    src = request.form if request.method == "POST" else request.args
+    return {k: src.get(k, "").strip() for k in ("kintone_user", "kintone_code") if src.get(k, "").strip()}
+
+
 def _project_query():
     pq = {}
     for k in ("project_name", "project_no", "inspector", "site_manager", "kintone_user", "kintone_code"):
@@ -1499,7 +1505,7 @@ def new_report(category):
             codes.append(notify_safety)
         notify_kintone_users(kintone_record_id, codes,
                              f"{label}が提出されました（工事名：{project_name} / 点検者：{inspector}）。承認をお願いします。")
-        return redirect(url_for("report_detail", category=category, report_id=report_id))
+        return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
 
     now = datetime.now().strftime("%Y-%m-%d")
     current_month = str(datetime.now().month)
@@ -1532,6 +1538,7 @@ def new_report(category):
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, prefill=prefill, legend=RESULT_LEGEND,
                            guide_names=_guide_item_names(category, subtype), kintone_user=kintone_user,
+                           kintone_code=request.args.get("kintone_code", "").strip(),
                            notify_users=get_notify_users(), flow_roles=flow_roles_of(info))
 
 
@@ -1598,7 +1605,7 @@ def edit_report(category, report_id):
                 "meeting_date": meeting_date, "meeting_attendees": meeting_attendees, "meeting_notes": meeting_notes,
                 "status": report["status"], "created_at": report["created_at"],
             }, sync_items)
-            return redirect(url_for("report_detail", category=category, report_id=report_id))
+            return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
 
         checklist = [item["item_name"] for item in items]
         now = (report["inspect_datetime"] or "")[:10]
@@ -1609,7 +1616,9 @@ def edit_report(category, report_id):
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, edit=report, edit_items=items, legend=RESULT_LEGEND,
-                           guide_names=_guide_item_names(category, subtype or ""))
+                           guide_names=_guide_item_names(category, subtype or ""),
+                           kintone_user=request.args.get("kintone_user", "").strip(),
+                           kintone_code=request.args.get("kintone_code", "").strip())
 
 
 # ── 点検報告：一覧 ───────────────────────────────────────────────
@@ -1717,7 +1726,8 @@ def report_detail(category, report_id):
                            current_step=current_step, flow_label=flow_label,
                            kintone_user=request.args.get("kintone_user", "").strip(),
                            kintone_code=request.args.get("kintone_code", "").strip(),
-                           can_approve=_can_approve_map(report, request.args.get("kintone_code", "").strip()))
+                           can_approve=_can_approve_map(report, request.args.get("kintone_code", "").strip()),
+                           pq=_project_query())
 
 
 @app.route("/reports/<category>/<int:report_id>/pdf")
@@ -1926,8 +1936,7 @@ def approve_report(category, report_id):
     approver_comment = f.get("approver_comment", "").strip()
     role = f.get("role", "").strip()
     if f.get("approve_check") != "1" or not approver_name or not steps:
-        return redirect(url_for("report_detail", category=category, report_id=report_id,
-                                kintone_user=f.get("kintone_user", "")))
+        return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
 
     conn = get_db()
     try:
@@ -1945,13 +1954,11 @@ def approve_report(category, report_id):
                 break
         # 全段完了済み、または指定roleが現在の段で承認可能でなければ何もしない
         if current is None or role not in steps[current] or (current, role) in done:
-            return redirect(url_for("report_detail", category=category, report_id=report_id,
-                                    kintone_user=f.get("kintone_user", "")))
+            return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
         # 担当者が指定されている役割は、本人（kintoneログイン名一致）のみ承認可
         assigned = _assigned_code(report, role)
         if assigned and f.get("kintone_code", "").strip() != assigned:
-            return redirect(url_for("report_detail", category=category, report_id=report_id,
-                                    kintone_user=f.get("kintone_user", "")))
+            return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
 
         now = datetime.now().isoformat(timespec="seconds")
         db_execute(conn, """
@@ -1988,8 +1995,7 @@ def approve_report(category, report_id):
         codes = [code_map.get(r) or "" for r in next_roles]
         notify_kintone_users(kintone_record_id, codes,
                              f"{info['label']}の{step_label(steps[current])}承認が完了しました（工事名：{report['project_name']}）。次の承認をお願いします。")
-    return redirect(url_for("report_detail", category=category, report_id=report_id,
-                            kintone_user=f.get("kintone_user", "")))
+    return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
 
 
 @app.route("/reports/<category>/<int:report_id>/delete", methods=["POST"])
@@ -2008,7 +2014,7 @@ def delete_report(category, report_id):
     finally:
         conn.close()
     delete_report_from_kintone(report_id)
-    return redirect(url_for("reports_list", category=category))
+    return redirect(url_for("reports_list", category=category, **_kintone_args()))
 
 
 # ── 資料集 ───────────────────────────────────────────────────────

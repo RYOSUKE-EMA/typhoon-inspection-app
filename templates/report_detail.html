@@ -128,9 +128,9 @@
 <p style="color:#b3382c; font-weight:700;">パスワードが正しくないため削除できませんでした。</p>
 {% endif %}
 <div class="flex">
-  <a href="{{ url_for('reports_list', category=category) }}" class="btn btn-secondary">一覧に戻る</a>
+  <a href="{{ url_for('reports_list', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}" class="btn btn-secondary">一覧に戻る</a>
   <a href="{{ url_for('report_pdf', category=category, report_id=report.id) }}" class="btn btn-primary">PDF保存</a>
-  <a href="{{ url_for('edit_report', category=category, report_id=report.id) }}" class="btn btn-secondary">編集</a>
+  <a href="{{ url_for('edit_report', category=category, report_id=report.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}" class="btn btn-secondary">編集</a>
   <form method="post" action="{{ url_for('delete_report', category=category, report_id=report.id) }}" onsubmit="return confirmDelete(this);">
     <input type="hidden" name="password" value="">
     <button type="submit" class="btn btn-danger">削除</button>

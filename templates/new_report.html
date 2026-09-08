@@ -6,6 +6,7 @@
   <form method="post" data-lock>
     {% if subtype %}<input type="hidden" name="subtype" value="{{ subtype }}">{% endif %}
     {% if kintone_user %}<input type="hidden" name="kintone_user" value="{{ kintone_user }}">{% endif %}
+    {% if kintone_code %}<input type="hidden" name="kintone_code" value="{{ kintone_code }}">{% endif %}
     <div class="flex">
       <div class="form-row" style="flex:1; min-width:160px;">
         <label>工事ナンバー</label>
