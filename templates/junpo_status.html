@@ -12,7 +12,7 @@
 {%- endmacro %}
 <div class="card">
   <h2><span class="accent-bar"></span>{{ info.label }} 提出状況</h2>
-  <p class="footer-note">対象現場：工事№の3〜6桁目が「0410」で、工期終了日が今日より後の工事（工事マスタより・1時間ごとに更新）</p>
+  <p class="footer-note">対象現場：工事№の3〜5桁目が「041」で、工期終了日が今日より後の工事（工事マスタより・1時間ごとに更新）</p>
   {% set base = ('&' ~ (pq|urlencode)) if pq else '' %}
   <div class="flex" style="align-items:center; margin:12px 0 16px;">
     <a class="btn btn-secondary btn-sm" href="{{ url_for('junpo_status') }}?year={{ prev[0] }}&month={{ prev[1] }}{{ base }}">← 前月</a>

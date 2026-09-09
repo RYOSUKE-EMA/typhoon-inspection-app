@@ -81,7 +81,7 @@ _junpo_projects_cache = {"data": None, "at": 0.0}
 
 
 def fetch_junpo_projects():
-    """安全旬報の提出対象現場：工事№の3〜6桁目が0410かつ工期終了日（実施工期、無ければ契約工期）が今日より後。"""
+    """安全旬報の提出対象現場：工事№の3〜5桁目が041かつ工期終了日（実施工期、無ければ契約工期）が今日より後。"""
     import time as _time
     if _junpo_projects_cache["data"] is not None and _time.time() - _junpo_projects_cache["at"] < 3600:
         return _junpo_projects_cache["data"]
@@ -108,7 +108,7 @@ def fetch_junpo_projects():
             for r in recs:
                 no = str(r["KojiNo"]["value"] or "").split(".")[0]
                 end = r["mkbJsYmd"]["value"] or r["mkuKsYmd"]["value"] or ""
-                if len(no) != 8 or no[2:6] != "0410" or end <= today:
+                if len(no) != 8 or no[2:5] != "041" or end <= today:
                     continue
                 if no not in projects:
                     projects[no] = {"no": no, "name": r["mkbKojiName"]["value"] or "", "end": end}
