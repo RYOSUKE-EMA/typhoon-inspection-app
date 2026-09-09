@@ -1,7 +1,7 @@
 import os
 import re
 import mimetypes
-from datetime import datetime
+from datetime import datetime, date
 
 import requests
 from flask import Flask, render_template, request, redirect, url_for, send_file, abort
@@ -1197,7 +1197,7 @@ def fetchone(cur):
 
 
 # スキーマ版数。マイグレーションを追加したら+1する（コールドスタート時の初期化スキップ判定に使用）
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 def init_db():
@@ -1292,6 +1292,17 @@ def init_db():
                 approved_at TEXT NOT NULL
             )""")
             cur.execute("""
+            CREATE TABLE IF NOT EXISTS junpo_exclusions (
+                id SERIAL PRIMARY KEY,
+                project_no TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                period TEXT NOT NULL,
+                set_by TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE (project_no, year, month, period)
+            )""")
+            cur.execute("""
             CREATE TABLE IF NOT EXISTS guide_images (
                 id SERIAL PRIMARY KEY,
                 guide_id INTEGER NOT NULL REFERENCES item_guides(id) ON DELETE CASCADE,
@@ -1366,6 +1377,16 @@ def init_db():
                 approver_name TEXT NOT NULL,
                 comment TEXT,
                 approved_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS junpo_exclusions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_no TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                period TEXT NOT NULL,
+                set_by TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE (project_no, year, month, period)
             );
             CREATE TABLE IF NOT EXISTS guide_images (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1705,8 +1726,17 @@ def junpo_status():
             "SELECT id, project_no, project_name, report_period, status FROM reports "
             "WHERE category='safety_patrol' AND report_month=? AND inspect_datetime LIKE ?",
             (str(month), f"{year}-%")))
+        excl_rows = fetchall(db_execute(conn,
+            "SELECT project_no, period, set_by FROM junpo_exclusions WHERE year=? AND month=?", (year, month)))
     finally:
         conn.close()
+    excluded = {(e["project_no"], e["period"]): e["set_by"] or "" for e in excl_rows}
+    # 期限：上旬=10日、中旬=20日、下旬=月末日。今日が期限を過ぎていれば未提出は「期限超過」
+    import calendar as _cal
+    last_day = _cal.monthrange(year, month)[1]
+    deadlines = {"上旬": 10, "中旬": 20, "下旬": last_day}
+    today = now.date()
+    overdue = {per: today > date(year, month, d) for per, d in deadlines.items()}
     # project_no → period → {"status": 提出済/承認済, "id": report_id}
     cells = {}
     names = {}
@@ -1717,8 +1747,16 @@ def junpo_status():
         cur = cells.setdefault(no, {}).get(r["report_period"])
         if cur is None or (st == "承認済" and cur["status"] != "承認済"):
             cells[no][r["report_period"]] = {"status": st, "id": r["id"]}
+    def period_cell(no, per):
+        c = cells.get(no, {}).get(per)
+        if c:
+            return c
+        if (no, per) in excluded:
+            return {"status": "対象外", "set_by": excluded[(no, per)]}
+        return {"status": "期限超過" if overdue[per] else "未提出"}
+
     rows = [{"no": p["no"], "name": p["name"], "end": p["end"],
-             "periods": {per: cells.get(p["no"], {}).get(per) for per in PERIOD_ORDER}} for p in projects]
+             "periods": {per: period_cell(p["no"], per) for per in PERIOD_ORDER}} for p in projects]
     # 対象リストに無い工事№で提出があったものも下に出す
     listed = {p["no"] for p in projects}
     extra = [{"no": no, "name": names.get(no, ""), "periods": {per: pers.get(per) for per in PERIOD_ORDER}}
@@ -1727,7 +1765,34 @@ def junpo_status():
     next_ym = (year + 1, 1) if month == 12 else (year, month + 1)
     return render_template("junpo_status.html", info=info, category="safety_patrol", year=year, month=month,
                            rows=rows, extra=extra, periods=list(PERIOD_ORDER), pq=_project_query(),
-                           prev=prev_ym, next=next_ym)
+                           prev=prev_ym, next=next_ym, deadlines=deadlines,
+                           kintone_user=request.args.get("kintone_user", "").strip())
+
+
+@app.route("/safety_patrol/status/exclude", methods=["POST"])
+def junpo_exclude():
+    """旬ごとの提出対象外を手動で切り替える（action=on/off）。"""
+    f = request.form
+    no = f.get("project_no", "").strip()
+    period = f.get("period", "").strip()
+    try:
+        year, month = int(f.get("year", "")), int(f.get("month", ""))
+    except ValueError:
+        abort(400)
+    if not no or period not in PERIOD_ORDER:
+        abort(400)
+    conn = get_db()
+    try:
+        db_execute(conn, "DELETE FROM junpo_exclusions WHERE project_no=? AND year=? AND month=? AND period=?",
+                   (no, year, month, period))
+        if f.get("action") == "on":
+            db_execute(conn, "INSERT INTO junpo_exclusions (project_no, year, month, period, set_by, created_at) "
+                             "VALUES (?, ?, ?, ?, ?, ?)",
+                       (no, year, month, period, f.get("kintone_user", "").strip(), datetime.now().isoformat(timespec="seconds")))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("junpo_status", year=year, month=month, **_kintone_args()))
 
 
 @app.route("/reports/<category>")

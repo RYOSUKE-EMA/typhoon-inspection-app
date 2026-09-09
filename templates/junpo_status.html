@@ -1,18 +1,46 @@
 {% extends "base.html" %}
 {% block content %}
-{% macro cell(c) -%}
-  {% if c %}
-  <td style="text-align:center;">
+{% macro cell(no, per, c, editable) -%}
+  <td class="status-cell">
+    {% if c.status in ('提出済', '承認済') %}
     <a href="{{ url_for('report_detail', category=category, report_id=c.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}"
        class="badge {{ 'badge-done' if c.status == '承認済' else 'badge-pending' }}">{{ c.status }}</a>
+    {% elif c.status == '対象外' %}
+    <span class="badge badge-none" title="{{ c.set_by }}が対象外に設定">対象外</span>
+    {% if editable %}
+    <form method="post" action="{{ url_for('junpo_exclude') }}" class="excl-form">
+      <input type="hidden" name="project_no" value="{{ no }}"><input type="hidden" name="period" value="{{ per }}">
+      <input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
+      <input type="hidden" name="kintone_user" value="{{ kintone_user }}"><input type="hidden" name="kintone_code" value="{{ pq.get('kintone_code', '') if pq else '' }}">
+      <input type="hidden" name="action" value="off">
+      <button type="submit" class="excl-btn">対象に戻す</button>
+    </form>
+    {% endif %}
+    {% else %}
+    <span class="badge {{ 'badge-overdue' if c.status == '期限超過' else 'badge-none' }}">{{ '未提出' if c.status == '未提出' else '未提出（期限超過）' }}</span>
+    {% if editable %}
+    <form method="post" action="{{ url_for('junpo_exclude') }}" class="excl-form" onsubmit="return confirm('{{ no }} の{{ year }}年{{ month }}月{{ per }}を提出対象外にしますか？');">
+      <input type="hidden" name="project_no" value="{{ no }}"><input type="hidden" name="period" value="{{ per }}">
+      <input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
+      <input type="hidden" name="kintone_user" value="{{ kintone_user }}"><input type="hidden" name="kintone_code" value="{{ pq.get('kintone_code', '') if pq else '' }}">
+      <input type="hidden" name="action" value="on">
+      <button type="submit" class="excl-btn">対象外にする</button>
+    </form>
+    {% endif %}
+    {% endif %}
   </td>
-  {% else %}
-  <td style="text-align:center;"><span class="badge badge-none">未提出</span></td>
-  {% endif %}
 {%- endmacro %}
+<style>
+  .status-cell { text-align:center; vertical-align:middle; }
+  .badge-overdue { background:#fdeceb; color:#b3382c; border:1px solid #e8a39b; font-weight:700; }
+  .excl-form { margin-top:4px; }
+  .excl-btn { background:none; border:none; color:#7a858c; font-size:0.75rem; cursor:pointer; text-decoration:underline; padding:0; }
+  .excl-btn:hover { color:#2f3b42; }
+</style>
 <div class="card">
   <h2><span class="accent-bar"></span>{{ info.label }} 提出状況</h2>
-  <p class="footer-note">対象現場：工事№の3〜5桁目が「041」で、工期終了日が今日より後の工事（工事マスタより・1時間ごとに更新）</p>
+  <p class="footer-note">対象現場：工事№の3〜5桁目が「041」で、工期終了日が今日より後の工事（工事マスタより・1時間ごとに更新）<br>
+    提出期限：上旬 {{ month }}/10、中旬 {{ month }}/20、下旬 {{ month }}/{{ deadlines['下旬'] }}。期限を過ぎた未提出は赤く表示します。</p>
   {% set base = ('&' ~ (pq|urlencode)) if pq else '' %}
   <div class="flex" style="align-items:center; margin:12px 0 16px;">
     <a class="btn btn-secondary btn-sm" href="{{ url_for('junpo_status') }}?year={{ prev[0] }}&month={{ prev[1] }}{{ base }}">← 前月</a>
@@ -27,7 +55,7 @@
           <th class="col-no">工事ナンバー</th>
           <th>工事名</th>
           <th style="width:110px;">工期終了</th>
-          {% for per in periods %}<th style="width:110px; text-align:center;">{{ per }}</th>{% endfor %}
+          {% for per in periods %}<th style="width:130px; text-align:center;">{{ per }}<br><span style="font-weight:400; font-size:0.75rem;">〜{{ month }}/{{ deadlines[per] }}</span></th>{% endfor %}
         </tr>
       </thead>
       <tbody>
@@ -36,7 +64,7 @@
           <td>{{ r.no }}</td>
           <td>{{ r.name }}</td>
           <td>{{ r.end }}</td>
-          {% for per in periods %}{{ cell(r.periods[per]) }}{% endfor %}
+          {% for per in periods %}{{ cell(r.no, per, r.periods[per], true) }}{% endfor %}
         </tr>
         {% endfor %}
         {% if not rows %}
@@ -49,10 +77,10 @@
   <h3 style="margin-top:22px; font-size:1rem;">対象リスト外の工事№で提出されたもの</h3>
   <div class="table-wrap">
     <table class="list-table">
-      <thead><tr><th class="col-no">工事ナンバー</th><th>工事名</th>{% for per in periods %}<th style="width:110px; text-align:center;">{{ per }}</th>{% endfor %}</tr></thead>
+      <thead><tr><th class="col-no">工事ナンバー</th><th>工事名</th>{% for per in periods %}<th style="width:130px; text-align:center;">{{ per }}</th>{% endfor %}</tr></thead>
       <tbody>
         {% for r in extra %}
-        <tr><td>{{ r.no }}</td><td>{{ r.name }}</td>{% for per in periods %}{{ cell(r.periods[per]) }}{% endfor %}</tr>
+        <tr><td>{{ r.no }}</td><td>{{ r.name }}</td>{% for per in periods %}{{ cell(r.no, per, r.periods[per] or {'status': '未提出'}, false) }}{% endfor %}</tr>
         {% endfor %}
       </tbody>
     </table>
