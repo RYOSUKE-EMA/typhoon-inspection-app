@@ -77,6 +77,49 @@ def fetch_kintone_users():
 
 # 工事マスタのキャッシュ（サーバレスの同一インスタンス内で10分保持）
 _projects_cache = {"data": None, "at": 0.0}
+_junpo_projects_cache = {"data": None, "at": 0.0}
+
+
+def fetch_junpo_projects():
+    """安全旬報の提出対象現場：工事№の3〜6桁目が0410かつ工期終了日（実施工期、無ければ契約工期）が今日より後。"""
+    import time as _time
+    if _junpo_projects_cache["data"] is not None and _time.time() - _junpo_projects_cache["at"] < 3600:
+        return _junpo_projects_cache["data"]
+    if not KINTONE_API_TOKEN_269:
+        return []
+    headers = {"X-Cybozu-API-Token": KINTONE_API_TOKEN_269}
+    url = f"https://{KINTONE_SUBDOMAIN}.cybozu.com/k/v1/records.json"
+    today = datetime.now().strftime("%Y-%m-%d")
+    projects = {}
+    last_id = 0
+    try:
+        while True:
+            params = {
+                "app": 269,
+                "query": f'(mkbJsYmd > TODAY() or mkuKsYmd > TODAY()) and $id > {last_id} order by $id asc limit 500',
+                "fields[0]": "$id", "fields[1]": "KojiNo", "fields[2]": "mkbKojiName",
+                "fields[3]": "mkbJsYmd", "fields[4]": "mkuKsYmd",
+            }
+            resp = requests.get(url, headers=headers, params=params, timeout=15)
+            resp.raise_for_status()
+            recs = resp.json()["records"]
+            if not recs:
+                break
+            for r in recs:
+                no = str(r["KojiNo"]["value"] or "").split(".")[0]
+                end = r["mkbJsYmd"]["value"] or r["mkuKsYmd"]["value"] or ""
+                if len(no) != 8 or no[2:6] != "0410" or end <= today:
+                    continue
+                if no not in projects:
+                    projects[no] = {"no": no, "name": r["mkbKojiName"]["value"] or "", "end": end}
+            last_id = recs[-1]["$id"]["value"]
+        data = sorted(projects.values(), key=lambda p: p["no"])
+        _junpo_projects_cache["data"] = data
+        _junpo_projects_cache["at"] = _time.time()
+        return data
+    except Exception as e:
+        print(f"[junpo projects] {e}")
+        return _junpo_projects_cache["data"] or []
 
 
 def fetch_active_projects():
@@ -1394,6 +1437,20 @@ def _project_query():
 DEV_USERS = ("江間",)
 # 公開済みカテゴリ（それ以外は開発中ロック）
 RELEASED_CATEGORIES = ("typhoon",)
+# 個別に先行公開するユーザー（表示名の空白は無視して部分一致）
+CATEGORY_PREVIEW_USERS = {"safety_patrol": ("藤田淳",)}
+
+
+def _unlocked_categories(kintone_user):
+    """このユーザーに表示するカテゴリ（公開済み＋個別公開＋開発者は全部）。"""
+    if kintone_user and any(d in kintone_user for d in DEV_USERS):
+        return set(INSPECTION_TYPES)
+    unlocked = set(RELEASED_CATEGORIES)
+    name = (kintone_user or "").replace(" ", "").replace("　", "")
+    for cat, users in CATEGORY_PREVIEW_USERS.items():
+        if name and any(u in name for u in users):
+            unlocked.add(cat)
+    return unlocked
 
 
 @app.route("/")
@@ -1411,7 +1468,8 @@ def index():
     kintone_user = request.args.get("kintone_user", "").strip()
     is_dev = any(d in kintone_user for d in DEV_USERS) if kintone_user else False
     return render_template("index.html", types=INSPECTION_TYPES, counts=counts, pq=_project_query(),
-                           is_dev=is_dev, released=RELEASED_CATEGORIES)
+                           is_dev=is_dev, released=RELEASED_CATEGORIES,
+                           unlocked=_unlocked_categories(kintone_user))
 
 
 # ── 点検報告：新規作成 ───────────────────────────────────────────
@@ -1628,6 +1686,48 @@ def edit_report(category, report_id):
 
 # ── 点検報告：一覧 ───────────────────────────────────────────────
 PERIOD_ORDER = {"上旬": 0, "中旬": 1, "下旬": 2}
+
+
+@app.route("/safety_patrol/status")
+def junpo_status():
+    """安全旬報の提出状況（対象現場×上旬・中旬・下旬）。"""
+    info = get_inspection_type("safety_patrol")
+    now = datetime.now()
+    try:
+        year = int(request.args.get("year", now.year))
+        month = int(request.args.get("month", now.month))
+    except ValueError:
+        year, month = now.year, now.month
+    projects = fetch_junpo_projects()
+    conn = get_db()
+    try:
+        reports = fetchall(db_execute(conn,
+            "SELECT id, project_no, project_name, report_period, status FROM reports "
+            "WHERE category='safety_patrol' AND report_month=? AND inspect_datetime LIKE ?",
+            (str(month), f"{year}-%")))
+    finally:
+        conn.close()
+    # project_no → period → {"status": 提出済/承認済, "id": report_id}
+    cells = {}
+    names = {}
+    for r in reports:
+        no = str(r["project_no"] or "").strip()
+        names.setdefault(no, r["project_name"] or "")
+        st = "承認済" if r["status"] == "確認済" else "提出済"
+        cur = cells.setdefault(no, {}).get(r["report_period"])
+        if cur is None or (st == "承認済" and cur["status"] != "承認済"):
+            cells[no][r["report_period"]] = {"status": st, "id": r["id"]}
+    rows = [{"no": p["no"], "name": p["name"], "end": p["end"],
+             "periods": {per: cells.get(p["no"], {}).get(per) for per in PERIOD_ORDER}} for p in projects]
+    # 対象リストに無い工事№で提出があったものも下に出す
+    listed = {p["no"] for p in projects}
+    extra = [{"no": no, "name": names.get(no, ""), "periods": {per: pers.get(per) for per in PERIOD_ORDER}}
+             for no, pers in sorted(cells.items()) if no not in listed]
+    prev_ym = (year - 1, 12) if month == 1 else (year, month - 1)
+    next_ym = (year + 1, 1) if month == 12 else (year, month + 1)
+    return render_template("junpo_status.html", info=info, category="safety_patrol", year=year, month=month,
+                           rows=rows, extra=extra, periods=list(PERIOD_ORDER), pq=_project_query(),
+                           prev=prev_ym, next=next_ym)
 
 
 @app.route("/reports/<category>")

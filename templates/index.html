@@ -10,7 +10,7 @@
 
 <div class="menu-grid">
   {% for key, info in types.items() %}
-  {% set locked = key not in released and not is_dev %}
+  {% set locked = key not in unlocked %}
   {% if locked %}
   <div class="menu-card" style="opacity:0.55; cursor:not-allowed; border-left-color:#9aa4a9;">
     <span class="badge pending-badge" style="background:#eef1f3; color:#5b656b; border-color:#c8cfd3;">開発中</span>
@@ -23,7 +23,7 @@
     <span class="badge badge-pending pending-badge">確認待ち {{ counts[key] }}</span>
     {% endif %}
     {% if key not in released %}
-    <span class="badge pending-badge" style="background:#eef1f3; color:#5b656b; border-color:#c8cfd3;">開発中（開発者のみ）</span>
+    <span class="badge pending-badge" style="background:#eef1f3; color:#5b656b; border-color:#c8cfd3;">{{ '開発中（開発者のみ）' if is_dev else '先行公開' }}</span>
     {% endif %}
     <div class="title">{{ info.label }}</div>
     <div class="desc">{{ info.desc }}</div>

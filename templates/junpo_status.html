@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+{% macro cell(c) -%}
+  {% if c %}
+  <td style="text-align:center;">
+    <a href="{{ url_for('report_detail', category=category, report_id=c.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}"
+       class="badge {{ 'badge-done' if c.status == '承認済' else 'badge-pending' }}">{{ c.status }}</a>
+  </td>
+  {% else %}
+  <td style="text-align:center;"><span class="badge badge-none">未提出</span></td>
+  {% endif %}
+{%- endmacro %}
+<div class="card">
+  <h2><span class="accent-bar"></span>{{ info.label }} 提出状況</h2>
+  <p class="footer-note">対象現場：工事№の3〜6桁目が「0410」で、工期終了日が今日より後の工事（工事マスタより・1時間ごとに更新）</p>
+  {% set base = ('&' ~ (pq|urlencode)) if pq else '' %}
+  <div class="flex" style="align-items:center; margin:12px 0 16px;">
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('junpo_status') }}?year={{ prev[0] }}&month={{ prev[1] }}{{ base }}">← 前月</a>
+    <span style="font-size:1.25rem; font-weight:700;">{{ year }}年{{ month }}月</span>
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('junpo_status') }}?year={{ next[0] }}&month={{ next[1] }}{{ base }}">翌月 →</a>
+    <span style="margin-left:auto;" class="footer-note">対象 {{ rows|length }} 現場</span>
+  </div>
+  <div class="table-wrap">
+    <table class="list-table">
+      <thead>
+        <tr>
+          <th class="col-no">工事ナンバー</th>
+          <th>工事名</th>
+          <th style="width:110px;">工期終了</th>
+          {% for per in periods %}<th style="width:110px; text-align:center;">{{ per }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.no }}</td>
+          <td>{{ r.name }}</td>
+          <td>{{ r.end }}</td>
+          {% for per in periods %}{{ cell(r.periods[per]) }}{% endfor %}
+        </tr>
+        {% endfor %}
+        {% if not rows %}
+        <tr><td colspan="{{ 3 + periods|length }}">対象現場が取得できませんでした。</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% if extra %}
+  <h3 style="margin-top:22px; font-size:1rem;">対象リスト外の工事№で提出されたもの</h3>
+  <div class="table-wrap">
+    <table class="list-table">
+      <thead><tr><th class="col-no">工事ナンバー</th><th>工事名</th>{% for per in periods %}<th style="width:110px; text-align:center;">{{ per }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for r in extra %}
+        <tr><td>{{ r.no }}</td><td>{{ r.name }}</td>{% for per in periods %}{{ cell(r.periods[per]) }}{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+<div class="flex">
+  <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">一覧に戻る</a>
+</div>
+{% endblock %}
