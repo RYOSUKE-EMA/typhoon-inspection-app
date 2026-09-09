@@ -54,9 +54,6 @@
     }
     var sp = kintone.mobile.app.getHeaderSpaceElement();
     if (!sp) return event;
-    var st = document.createElement('style');
-    st.textContent = '[class*="app-index-recordlist"], [class*="gaia-mobile-v2-app-index-list"] { display:none !important; }';
-    document.head.appendChild(st);
     var target = null;
     try {
       target = sessionStorage.getItem('tenkenTarget');
@@ -64,13 +61,16 @@
     } catch (e) {}
     var path = target || '/';
     var sep = path.indexOf('?') === -1 ? '?' : '&';
+    // 標準のレコード一覧はDOM構造が変わりうるので隠さず、
+    // ヘッダー直下から画面下端までを覆う固定表示のiframeで見えなくする（iframe内でスクロール）。
     var frame = document.createElement('iframe');
     frame.id = 'tenken-frame';
-    frame.setAttribute('scrolling', 'no');
-    frame.style.cssText = 'width:100%;border:none;display:block;overflow:hidden;height:800px;background:#fff;';
+    frame.setAttribute('data-mobile', '1');
+    var top = Math.max(0, Math.round(sp.getBoundingClientRect().top + window.scrollY));
+    frame.style.cssText = 'position:fixed;left:0;right:0;bottom:0;top:' + top + 'px;width:100%;border:none;background:#fff;z-index:900;';
     frame.src = BASE + path + sep + userQuery();
-    sp.style.padding = '0';
-    sp.appendChild(frame);
+    document.body.appendChild(frame);
+    document.body.style.overflow = 'hidden';
     return event;
   });
 
@@ -96,7 +96,7 @@
     var f = getFrame();
     if (!f) return;
     if (e.data.type === 'tenken-height') {
-      f.style.height = Math.max(400, e.data.height) + 'px';
+      if (f.getAttribute('data-mobile') !== '1') { f.style.height = Math.max(400, e.data.height) + 'px'; }
       sendViewport();
     } else if (e.data.type === 'tenken-whoami') {
       // アプリ側でログイン情報が落ちたときに問い合わせが来るので返す
@@ -105,7 +105,7 @@
     } else if (e.data.type === 'tenken-loaded') {
       // 画面遷移のたびにiframeの先頭が見えるようスクロール位置を戻す
       var r = f.getBoundingClientRect();
-      if (r.top < 0) { window.scrollTo({ top: window.scrollY + r.top - 8 }); }
+      if (f.getAttribute('data-mobile') !== '1' && r.top < 0) { window.scrollTo({ top: window.scrollY + r.top - 8 }); }
       sendViewport();
     }
   });
