@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2><span class="accent-bar"></span>{{ info.label }} 点検項目の編集{% if subtype_label %}（{{ subtype_label }}）{% endif %}</h2>
+  <p class="footer-note">1行に1項目を書いてください。行の順番がそのまま点検表の順番になります。文章の修正・追加・削除・並べ替えができ、保存後に作成する点検から反映されます（既に提出済みの点検は変わりません）。<br>
+  項目数を変えずに文章だけ直した場合は、登録済みの「解説」（手引き）もそのまま引き継がれます。</p>
+
+  {% if subtypes %}
+  <div class="filter-bar" style="margin-top:14px;">
+    <span class="filter-label">足場の種類</span>
+    {% for key, sub in subtypes.items() %}
+    <a class="btn btn-sm {% if key == subtype %}btn-primary{% else %}btn-secondary{% endif %}"
+       href="{{ url_for('checklist_edit', category=category, subtype=key, kintone_user=kintone_user or '', kintone_code=kintone_code or '') }}">{{ sub.label }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if message %}<p style="color:#1f7a3a; font-weight:700; margin-top:12px;">{{ message }}</p>{% endif %}
+  {% if is_overridden %}<p class="footer-note" style="margin-top:8px;">現在、標準の項目文から変更された内容が適用されています。</p>{% endif %}
+
+  <form method="post" action="{{ url_for('checklist_edit', category=category) }}" data-lock style="margin-top:14px;">
+    <input type="hidden" name="subtype" value="{{ subtype }}">
+    <input type="hidden" name="kintone_user" value="{{ kintone_user }}">
+    <input type="hidden" name="kintone_code" value="{{ kintone_code }}">
+    <div class="form-row">
+      <label>点検項目（{{ items|length }}件）</label>
+      <textarea name="items" rows="{{ [items|length + 3, 12]|max }}" style="width:100%; font-family:inherit; line-height:1.7;">{% for it in items %}{{ it }}
+{% endfor %}</textarea>
+    </div>
+    <div class="flex">
+      <button type="submit" class="btn btn-primary">保存</button>
+      {% if is_overridden %}
+      <button type="submit" name="reset" value="1" class="btn btn-secondary" onclick="return confirm('標準の項目文に戻しますか？');">標準に戻す</button>
+      {% endif %}
+      <a class="btn btn-secondary" href="{{ url_for('guides_edit', category=category, subtype=subtype or None, kintone_user=kintone_user or '', kintone_code=kintone_code or '') }}">手引き編集に戻る</a>
+    </div>
+  </form>
+
+  {% if is_overridden %}
+  <details style="margin-top:20px;">
+    <summary style="cursor:pointer; color:var(--ink-soft);">標準の項目文を表示（{{ default|length }}件）</summary>
+    <ol style="margin:10px 0 0 22px; font-size:0.9rem; line-height:1.8;">{% for it in default %}<li>{{ it }}</li>{% endfor %}</ol>
+  </details>
+  {% endif %}
+</div>
+{% endblock %}

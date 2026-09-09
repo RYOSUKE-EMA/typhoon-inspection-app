@@ -15,6 +15,7 @@
   {% endif %}
 
   <div class="flex" style="margin:14px 0;">
+    <a class="btn btn-primary" href="{{ url_for('checklist_edit', category=category, subtype=subtype or None, kintone_user=kintone_user or '', kintone_code=kintone_code or '') }}">点検項目の文章を編集</a>
     <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">一覧に戻る</a>
   </div>
 </div>

@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import mimetypes
 from datetime import datetime, date
 
@@ -1197,7 +1198,7 @@ def fetchone(cur):
 
 
 # スキーマ版数。マイグレーションを追加したら+1する（コールドスタート時の初期化スキップ判定に使用）
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 def init_db():
@@ -1292,6 +1293,16 @@ def init_db():
                 approved_at TEXT NOT NULL
             )""")
             cur.execute("""
+            CREATE TABLE IF NOT EXISTS checklist_overrides (
+                id SERIAL PRIMARY KEY,
+                category TEXT NOT NULL,
+                subtype TEXT NOT NULL DEFAULT '',
+                items_json TEXT NOT NULL,
+                updated_by TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE (category, subtype)
+            )""")
+            cur.execute("""
             CREATE TABLE IF NOT EXISTS junpo_exclusions (
                 id SERIAL PRIMARY KEY,
                 project_no TEXT NOT NULL,
@@ -1377,6 +1388,15 @@ def init_db():
                 approver_name TEXT NOT NULL,
                 comment TEXT,
                 approved_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS checklist_overrides (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category TEXT NOT NULL,
+                subtype TEXT NOT NULL DEFAULT '',
+                items_json TEXT NOT NULL,
+                updated_by TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE (category, subtype)
             );
             CREATE TABLE IF NOT EXISTS junpo_exclusions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1506,12 +1526,12 @@ def new_report(category):
                 abort(400)
             return render_template("select_subtype.html", category=category, info=info, pq=_project_query())
         subtype_info = info["subtypes"][subtype]
-        checklist = subtype_info["checklist"]
+        checklist = _checklist_for(info, subtype, category)
         subtype_label = subtype_info["label"]
     else:
         subtype = None
         subtype_label = None
-        checklist = info["checklist"]
+        checklist = _checklist_for(info, None, category)
 
     if request.method == "POST":
         f = request.form
@@ -2270,13 +2290,87 @@ def delete_resource(resource_id):
 
 
 # ── 点検項目の手引き（参考画像・説明文） ─────────────────────────
-def _checklist_for(info, subtype):
-    """カテゴリ（＋足場種別）に対応するチェック項目リストを返す。"""
+def _default_checklist(info, subtype):
     if "subtypes" in info:
         if subtype and subtype in info["subtypes"]:
             return info["subtypes"][subtype]["checklist"]
         return []
     return info["checklist"]
+
+
+def _checklist_for(info, subtype, category=None):
+    """カテゴリ（＋足場種別）に対応するチェック項目リスト。TL以上が編集した上書きがあればそれを返す。"""
+    default = _default_checklist(info, subtype)
+    if category is None:
+        category = next((k for k, v in INSPECTION_TYPES.items() if v is info), None)
+    if not category:
+        return default
+    conn = get_db()
+    try:
+        row = fetchone(db_execute(conn, "SELECT items_json FROM checklist_overrides WHERE category=? AND subtype=?",
+                                  (category, subtype or "")))
+    finally:
+        conn.close()
+    if row:
+        try:
+            items = json.loads(row["items_json"])
+            if isinstance(items, list) and items:
+                return items
+        except ValueError:
+            pass
+    return default
+
+
+@app.route("/guides/<category>/items", methods=["GET", "POST"])
+def checklist_edit(category):
+    """点検項目の文章を編集（TL以上）。1行＝1項目。"""
+    info = get_inspection_type(category)
+    subtypes = info.get("subtypes")
+    src = request.form if request.method == "POST" else request.args
+    subtype = ""
+    subtype_label = None
+    if subtypes:
+        subtype = src.get("subtype", "") or next(iter(subtypes))
+        if subtype not in subtypes:
+            abort(404)
+        subtype_label = subtypes[subtype]["label"]
+    if not _editor_from_request():
+        return ("<meta charset='utf-8'><p>点検項目の編集は、承認者名簿に登録されたTL以上のメンバーのみ行えます。</p>"
+                "<p><a href='javascript:history.back()'>戻る</a></p>", 403)
+    kintone_user = src.get("kintone_user", "").strip()
+    kintone_code = src.get("kintone_code", "").strip()
+    current = _checklist_for(info, subtype, category)
+    message = None
+    if request.method == "POST":
+        new_items = [line.strip() for line in request.form.get("items", "").splitlines() if line.strip()]
+        if request.form.get("reset") == "1":
+            new_items = []
+        conn = get_db()
+        try:
+            now = datetime.now().isoformat(timespec="seconds")
+            db_execute(conn, "DELETE FROM checklist_overrides WHERE category=? AND subtype=?", (category, subtype))
+            if new_items:
+                db_execute(conn, "INSERT INTO checklist_overrides (category, subtype, items_json, updated_by, updated_at) "
+                                 "VALUES (?, ?, ?, ?, ?)",
+                           (category, subtype, json.dumps(new_items, ensure_ascii=False), kintone_user, now))
+                # 項目名が変わった位置は手引き（解説）の紐付けも追従させる（項目数が同じ場合のみ）
+                if len(new_items) == len(current):
+                    for old, new in zip(current, new_items):
+                        if old != new:
+                            db_execute(conn, "UPDATE item_guides SET item_name=? WHERE category=? AND subtype=? AND item_name=?",
+                                       (new, category, subtype, old))
+            conn.commit()
+        finally:
+            conn.close()
+        return redirect(url_for("checklist_edit", category=category, subtype=subtype or None,
+                                kintone_user=kintone_user, kintone_code=kintone_code, saved=1))
+    if request.args.get("saved"):
+        message = "保存しました。次回の点検入力から反映されます。"
+    default = _default_checklist(info, subtype)
+    return render_template("checklist_edit.html", category=category, info=info, items=current, default=default,
+                           is_overridden=(current != default), subtypes=subtypes, subtype=subtype,
+                           subtype_label=subtype_label, kintone_user=kintone_user, kintone_code=kintone_code,
+                           message=message)
 
 
 def _guide_image_ids(conn, guide_id):
@@ -2326,7 +2420,7 @@ def guides_edit(category):
     if not _editor_from_request():
         return ("<meta charset='utf-8'><p>項目の手引きの編集は、承認者名簿に登録されたTL以上のメンバーのみ行えます。</p>"
                 "<p><a href='javascript:history.back()'>戻る</a></p>", 403)
-    checklist = _checklist_for(info, subtype)
+    checklist = _checklist_for(info, subtype, category)
     guides = _guides_map(category, subtype)
     return render_template("guides.html", category=category, info=info, checklist=checklist,
                            guides=guides, subtypes=subtypes, subtype=subtype, subtype_label=subtype_label,

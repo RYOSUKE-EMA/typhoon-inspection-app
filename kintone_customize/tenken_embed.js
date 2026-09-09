@@ -39,7 +39,19 @@
   // スマホ（kintoneモバイル）：カスタマイズビューは表示されないので、
   // 一覧のヘッダースペースにiframeを差し込み、標準のレコード一覧は隠す。
   kintone.events.on('mobile.app.record.index.show', function (event) {
-    if (document.getElementById('tenken-frame')) return event;
+    var existing = document.getElementById('tenken-frame');
+    if (existing) {
+      // カスタマイズビューがスマホでも描画された場合：srcだけ設定する
+      if (!existing.getAttribute('src')) {
+        var t0 = null;
+        try { t0 = sessionStorage.getItem('tenkenTarget'); sessionStorage.removeItem('tenkenTarget'); } catch (e) {}
+        var p0 = t0 || '/';
+        existing.setAttribute('scrolling', 'no');
+        existing.style.cssText = 'width:100%;border:none;display:block;overflow:hidden;height:800px;';
+        existing.src = BASE + p0 + (p0.indexOf('?') === -1 ? '?' : '&') + userQuery();
+      }
+      return event;
+    }
     var sp = kintone.mobile.app.getHeaderSpaceElement();
     if (!sp) return event;
     var st = document.createElement('style');
