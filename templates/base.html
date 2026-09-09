@@ -314,6 +314,26 @@
     padding-top: calc(var(--embed-top, 0px) + 60px);
   }
   html.embedded #guide-modal .g-box { max-height: calc(var(--embed-vh, 100vh) * 0.85); }
+  /* スマホ（kintoneモバイル埋め込み含む） */
+  @media (max-width: 640px) {
+    body { font-size: 14px; }
+    header { padding: 10px 14px; gap: 12px; }
+    header h1 { font-size: 1rem; }
+    .container { margin: 12px auto; padding: 0 10px; }
+    .card { padding: 14px 12px; margin-bottom: 14px; }
+    h2 { font-size: 1rem; }
+    .btn { padding: 9px 12px; font-size: 0.9rem; }
+    .flex { gap: 8px; }
+    .menu-grid { grid-template-columns: 1fr; gap: 10px; }
+    table { font-size: 0.82rem; }
+    th, td { padding: 6px 6px; }
+    .item-table select { min-width: 84px; }
+    input[type=text], input[type=date], input[type=datetime-local], input[type=number], textarea, select { font-size: 16px; }
+    .filter-bar { gap: 8px; }
+    .filter-bar .search-input { width: 100%; }
+    details.month-group .table-wrap { padding: 4px 4px 8px; }
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  }
 </style>
 {% block extra_style %}{% endblock %}
 </head>
