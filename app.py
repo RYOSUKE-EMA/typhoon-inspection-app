@@ -1483,7 +1483,8 @@ CATEGORY_PREVIEW_USERS = {"safety_patrol": ("藤田淳",)}
 
 
 def _unlocked_categories(kintone_user):
-    """このユーザーに表示するカテゴリ（公開済み＋個別公開＋開発者は全部）。"""
+    """このユーザーに表示するカテゴリ。2026-09-18 指示によりアクセス制限は全解除（「開発中」表示のみ残す）。"""
+    return set(INSPECTION_TYPES)
     if kintone_user and any(d in kintone_user for d in DEV_USERS):
         return set(INSPECTION_TYPES)
     unlocked = set(RELEASED_CATEGORIES)
