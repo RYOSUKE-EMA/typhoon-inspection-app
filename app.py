@@ -1477,7 +1477,7 @@ def _project_query():
 # 開発中アプリを操作できる開発者（kintoneユーザー名の部分一致）
 DEV_USERS = ("江間",)
 # 公開済みカテゴリ（それ以外は開発中ロック）
-RELEASED_CATEGORIES = ("typhoon",)
+RELEASED_CATEGORIES = ("typhoon", "safety_patrol")
 # 個別に先行公開するユーザー（表示名の空白は無視して部分一致）
 CATEGORY_PREVIEW_USERS = {"safety_patrol": ("藤田淳",)}
 
