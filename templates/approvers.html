@@ -2,16 +2,25 @@
 {% block content %}
 <div class="card">
   <h2><span class="accent-bar"></span>承認者・通知先の名簿</h2>
-  <p class="footer-note">報告書の提出・承認時にkintone通知を送る相手を登録します。担当工事№を登録すると、報告書作成時に工事№からTL/GL・BLが自動選択されます。ユーザーはkintoneの従業員情報から選択でき、表示名は自動で取り込まれます。</p>
+  <p class="footer-note">報告書の提出・承認時にkintone通知を送る相手を登録します。メンバーはブロックごとに登録し、報告書の作成画面には提出者（ログイン者）の所属ブロックのメンバーだけが表示されます。「全ブロック共通」にしたメンバーはどのブロックにも表示されます。担当工事№を登録すると、報告書作成時に工事№からTL/GL・BLが自動選択されます。ユーザーはkintoneの従業員情報から選択でき、表示名は自動で取り込まれます。</p>
 
   {% for role in roles %}
   <h2 style="margin-top:22px;"><span class="accent-bar"></span>{{ role }}</h2>
   {% if users.get(role) %}
-  <table style="max-width:600px;">
-    <thead><tr><th>表示名</th><th>kintoneログイン名</th><th>担当工事№</th><th style="width:80px;"></th></tr></thead>
+  <table style="max-width:820px;">
+    <thead><tr><th style="width:170px;">ブロック</th><th>表示名</th><th>kintoneログイン名</th><th>担当工事№</th><th style="width:80px;"></th></tr></thead>
     <tbody>
       {% for u in users[role] %}
       <tr>
+        <td>
+          <form method="post" action="{{ url_for('approvers_set_block', user_id=u.id) }}">
+            <select name="block" onchange="this.form.submit()" style="width:auto; min-width:140px;">
+              <option value="" {% if not u.block %}selected{% endif %}>全ブロック共通</option>
+              {% for b in blocks %}<option value="{{ b }}" {% if u.block == b %}selected{% endif %}>{{ b }}</option>{% endfor %}
+              {% if u.block and u.block not in blocks %}<option value="{{ u.block }}" selected>{{ u.block }}</option>{% endif %}
+            </select>
+          </form>
+        </td>
         <td>{{ u.display_name }}</td>
         <td>{{ u.kintone_code }}</td>
         <td>{{ u.koji_nos or "" }}</td>
@@ -34,6 +43,13 @@
   <h2><span class="accent-bar"></span>追加</h2>
   <form method="post" data-lock>
     <div class="flex">
+      <div class="form-row" style="min-width:150px;">
+        <label>ブロック</label>
+        <select name="block">
+          {% for b in blocks %}<option value="{{ b }}" {% if b == '都市Ｂ' %}selected{% endif %}>{{ b }}</option>{% endfor %}
+          <option value="">全ブロック共通</option>
+        </select>
+      </div>
       <div class="form-row" style="min-width:140px;">
         <label>役割</label>
         <select name="role">

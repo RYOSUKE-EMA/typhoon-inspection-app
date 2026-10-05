@@ -34,6 +34,7 @@
 
     {% if not edit and info.approval_flow %}
     <h2 style="margin-top:24px;"><span class="accent-bar"></span>提出先（kintone通知）</h2>
+    {% if user_block %}<p class="footer-note" style="margin:-4px 0 10px;">{{ user_block }}の名簿から表示しています（ログイン者の所属ブロックで自動判定）</p>{% endif %}
     <div class="flex">
       {% if "TL" in flow_roles %}
       <div class="form-row" style="flex:1; min-width:200px;">

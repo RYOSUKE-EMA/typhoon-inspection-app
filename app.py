@@ -277,8 +277,9 @@ def notify_kintone_users(kintone_record_id, codes, message):
         print(f"kintone notify failed: {e}")
 
 
-def get_notify_users():
-    """役割ごとの通知先ユーザー名簿を返す。{role: [{display_name, kintone_code}]}"""
+def get_notify_users(block=None):
+    """役割ごとの通知先ユーザー名簿を返す。{role: [{display_name, kintone_code, block}]}
+    block指定時はそのブロック所属＋全ブロック共通（block空欄）のメンバーだけを返す。"""
     conn = get_db()
     try:
         rows = fetchall(db_execute(conn, "SELECT * FROM notify_users ORDER BY role, id"))
@@ -286,8 +287,69 @@ def get_notify_users():
         conn.close()
     result = {}
     for r in rows:
+        if block and (r["block"] or "") not in ("", block):
+            continue
         result.setdefault(r["role"], []).append(r)
     return result
+
+
+_BLOCK_RE = re.compile(r"^[^\s　]+Ｂ$")
+_user_block_cache = {}
+_blocks_cache = {"data": None, "at": 0.0}
+
+
+def fetch_blocks():
+    """cybozuの組織から「○○Ｂ」（ブロック）の一覧を取得する。1時間キャッシュ。"""
+    import time as _time
+    if _blocks_cache["data"] is not None and _time.time() - _blocks_cache["at"] < 3600:
+        return _blocks_cache["data"]
+    blocks = []
+    if CYBOZU_AUTH:
+        try:
+            offset = 0
+            while True:
+                resp = requests.get(f"https://{KINTONE_SUBDOMAIN}.cybozu.com/v1/organizations.json",
+                                    headers={"X-Cybozu-Authorization": CYBOZU_AUTH},
+                                    params={"offset": offset, "size": 100}, timeout=15)
+                resp.raise_for_status()
+                orgs = resp.json()["organizations"]
+                if not orgs:
+                    break
+                blocks += [o["name"] for o in orgs if _BLOCK_RE.match(o["name"])]
+                offset += 100
+        except Exception as e:
+            print(f"[blocks] {e}")
+    if not blocks:
+        blocks = ["都市Ｂ", "マンションＢ", "環境Ｂ", "設計Ｂ", "調達Ｂ", "総務Ｂ"]
+    _blocks_cache["data"] = blocks
+    _blocks_cache["at"] = _time.time()
+    return blocks
+
+
+def fetch_user_block(kintone_code):
+    """ログインユーザーの所属ブロック（cybozu組織の「○○Ｂ」）を返す。判定できなければ空文字。"""
+    import time as _time
+    if not kintone_code or not CYBOZU_AUTH:
+        return ""
+    hit = _user_block_cache.get(kintone_code)
+    if hit and _time.time() - hit[1] < 3600:
+        return hit[0]
+    block = ""
+    try:
+        resp = requests.get(f"https://{KINTONE_SUBDOMAIN}.cybozu.com/v1/user/organizations.json",
+                            headers={"X-Cybozu-Authorization": CYBOZU_AUTH},
+                            params={"code": kintone_code}, timeout=10)
+        resp.raise_for_status()
+        for t in resp.json().get("organizationTitles", []):
+            name = t["organization"]["name"]
+            if _BLOCK_RE.match(name):
+                block = name
+                break
+    except Exception as e:
+        print(f"[user block] {e}")
+        return ""
+    _user_block_cache[kintone_code] = (block, _time.time())
+    return block
 
 
 def delete_report_from_kintone(report_id):
@@ -1198,7 +1260,7 @@ def fetchone(cur):
 
 
 # スキーマ版数。マイグレーションを追加したら+1する（コールドスタート時の初期化スキップ判定に使用）
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 def init_db():
@@ -1249,6 +1311,15 @@ def init_db():
                 kintone_code TEXT NOT NULL
             )""")
             cur.execute("ALTER TABLE notify_users ADD COLUMN IF NOT EXISTS koji_nos TEXT")
+            cur.execute("""
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='notify_users' AND column_name='block') THEN
+                ALTER TABLE notify_users ADD COLUMN block TEXT;
+                -- 既存メンバーは都市Ｂ所属として移行（安全検査室は全ブロック共通）
+                UPDATE notify_users SET block = CASE WHEN role='安全検査室' THEN '' ELSE '都市Ｂ' END;
+              END IF;
+            END $$;""")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS report_items (
                 id SERIAL PRIMARY KEY,
@@ -1378,7 +1449,8 @@ def init_db():
                 role TEXT NOT NULL,
                 display_name TEXT NOT NULL,
                 kintone_code TEXT NOT NULL,
-                koji_nos TEXT
+                koji_nos TEXT,
+                block TEXT
             );
             CREATE TABLE IF NOT EXISTS approvals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1416,6 +1488,10 @@ def init_db():
                 sort_order INTEGER NOT NULL DEFAULT 0
             );
             """)
+            cols = [c[1] for c in conn.execute("PRAGMA table_info(notify_users)").fetchall()]
+            if "block" not in cols:
+                conn.execute("ALTER TABLE notify_users ADD COLUMN block TEXT")
+                conn.execute("UPDATE notify_users SET block = CASE WHEN role='安全検査室' THEN '' ELSE '都市Ｂ' END")
             for r in conn.execute("SELECT id, image_data, image_mimetype FROM item_guides WHERE image_mimetype IS NOT NULL").fetchall():
                 conn.execute("INSERT INTO guide_images (guide_id, image_data, image_mimetype, sort_order) VALUES (?,?,?,0)",
                              (r[0], r[1], r[2]))
@@ -1639,12 +1715,15 @@ def new_report(category):
         # 点検者は常にログインユーザー本人を自動入力（URLパラメータ指定があればそちら優先）
         if not prefill["inspector"]:
             prefill["inspector"] = kintone_user
+    # 提出者の所属ブロックの承認者だけを候補に出す（判定できなければ全員）
+    user_block = fetch_user_block(request.args.get("kintone_code", "").strip())
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, prefill=prefill, legend=RESULT_LEGEND,
                            guide_names=_guide_item_names(category, subtype), kintone_user=kintone_user,
                            kintone_code=request.args.get("kintone_code", "").strip(),
-                           notify_users=get_notify_users(), flow_roles=flow_roles_of(info))
+                           notify_users=get_notify_users(user_block or None), user_block=user_block,
+                           flow_roles=flow_roles_of(info))
 
 
 # ── 点検報告：編集 ───────────────────────────────────────────────
@@ -2627,6 +2706,7 @@ def approvers():
         role = f.get("role", "").strip()
         pick = f.get("kintone_pick", "").strip() or f.get("kintone_code", "").strip()
         koji_nos = f.get("koji_nos", "").strip()
+        block = f.get("block", "").strip()
         # 「表示名（code）」形式・code直入力・名前だけ、のいずれからも特定する
         kintone_code = ""
         display_name = ""
@@ -2646,14 +2726,25 @@ def approvers():
         if role in NOTIFY_ROLES and kintone_code:
             conn = get_db()
             try:
-                db_execute(conn, "INSERT INTO notify_users (role, display_name, kintone_code, koji_nos) VALUES (?,?,?,?)",
-                           (role, display_name, kintone_code, koji_nos))
+                db_execute(conn, "INSERT INTO notify_users (role, display_name, kintone_code, koji_nos, block) VALUES (?,?,?,?,?)",
+                           (role, display_name, kintone_code, koji_nos, block))
                 conn.commit()
             finally:
                 conn.close()
         return redirect(url_for("approvers"))
     return render_template("approvers.html", roles=NOTIFY_ROLES, users=get_notify_users(),
-                           kintone_users=fetch_kintone_users())
+                           kintone_users=fetch_kintone_users(), blocks=fetch_blocks())
+
+
+@app.route("/approvers/<int:user_id>/block", methods=["POST"])
+def approvers_set_block(user_id):
+    conn = get_db()
+    try:
+        db_execute(conn, "UPDATE notify_users SET block=? WHERE id=?", (request.form.get("block", "").strip(), user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("approvers"))
 
 
 @app.route("/approvers/<int:user_id>/delete", methods=["POST"])
