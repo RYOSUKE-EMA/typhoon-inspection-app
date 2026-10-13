@@ -100,6 +100,7 @@ def fetch_junpo_projects():
                 "query": f'(mkbJsYmd > TODAY() or mkuKsYmd > TODAY()) and $id > {last_id} order by $id asc limit 500',
                 "fields[0]": "$id", "fields[1]": "KojiNo", "fields[2]": "mkbKojiName",
                 "fields[3]": "mkbJsYmd", "fields[4]": "mkuKsYmd",
+                "fields[5]": "mkbJkYmd", "fields[6]": "mkuKkYmd",
             }
             resp = requests.get(url, headers=headers, params=params, timeout=15)
             resp.raise_for_status()
@@ -112,7 +113,8 @@ def fetch_junpo_projects():
                 if len(no) != 8 or no[2:5] != "041" or end <= today:
                     continue
                 if no not in projects:
-                    projects[no] = {"no": no, "name": r["mkbKojiName"]["value"] or "", "end": end}
+                    start = r["mkbJkYmd"]["value"] or r["mkuKkYmd"]["value"] or ""
+                    projects[no] = {"no": no, "name": r["mkbKojiName"]["value"] or "", "start": start, "end": end}
             last_id = recs[-1]["$id"]["value"]
         data = sorted(projects.values(), key=lambda p: p["no"])
         _junpo_projects_cache["data"] = data
@@ -1260,7 +1262,7 @@ def fetchone(cur):
 
 
 # スキーマ版数。マイグレーションを追加したら+1する（コールドスタート時の初期化スキップ判定に使用）
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 def init_db():
@@ -1374,6 +1376,14 @@ def init_db():
                 UNIQUE (category, subtype)
             )""")
             cur.execute("""
+            CREATE TABLE IF NOT EXISTS junpo_periods (
+                project_no TEXT PRIMARY KEY,
+                start_date TEXT,
+                end_date TEXT,
+                set_by TEXT,
+                updated_at TEXT NOT NULL
+            )""")
+            cur.execute("""
             CREATE TABLE IF NOT EXISTS junpo_exclusions (
                 id SERIAL PRIMARY KEY,
                 project_no TEXT NOT NULL,
@@ -1469,6 +1479,13 @@ def init_db():
                 updated_by TEXT,
                 updated_at TEXT NOT NULL,
                 UNIQUE (category, subtype)
+            );
+            CREATE TABLE IF NOT EXISTS junpo_periods (
+                project_no TEXT PRIMARY KEY,
+                start_date TEXT,
+                end_date TEXT,
+                set_by TEXT,
+                updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS junpo_exclusions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1828,8 +1845,10 @@ def junpo_status():
             (str(month), f"{year}-%")))
         excl_rows = fetchall(db_execute(conn,
             "SELECT project_no, period, set_by FROM junpo_exclusions WHERE year=? AND month=?", (year, month)))
+        period_rows = fetchall(db_execute(conn, "SELECT project_no, start_date, end_date FROM junpo_periods"))
     finally:
         conn.close()
+    custom_periods = {p["project_no"]: p for p in period_rows}
     excluded = {(e["project_no"], e["period"]): e["set_by"] or "" for e in excl_rows}
     # 期限：上旬=10日、中旬=20日、下旬=月末日。今日が期限を過ぎていれば未提出は「期限超過」
     import calendar as _cal
@@ -1847,16 +1866,44 @@ def junpo_status():
         cur = cells.setdefault(no, {}).get(r["report_period"])
         if cur is None or (st == "承認済" and cur["status"] != "承認済"):
             cells[no][r["report_period"]] = {"status": st, "id": r["id"]}
-    def period_cell(no, per):
+    # 旬の日付範囲（上旬1〜10日／中旬11〜20日／下旬21日〜月末）
+    per_range = {"上旬": (date(year, month, 1), date(year, month, 10)),
+                 "中旬": (date(year, month, 11), date(year, month, 20)),
+                 "下旬": (date(year, month, 21), date(year, month, last_day))}
+
+    def target_period(p):
+        """対象期間（手動設定があればそれ、無ければ工事マスタの工期）。"""
+        cp = custom_periods.get(p["no"])
+        if cp:
+            return (cp["start_date"] or "", cp["end_date"] or "", True)
+        return (p.get("start", ""), p.get("end", ""), False)
+
+    def in_period(start, end, per):
+        lo, hi = per_range[per]
+        if start and start > hi.isoformat():
+            return False
+        if end and end < lo.isoformat():
+            return False
+        return True
+
+    def period_cell(no, per, start="", end=""):
         c = cells.get(no, {}).get(per)
         if c:
             return c
+        if not in_period(start, end, per):
+            return {"status": "期間外"}
         if (no, per) in excluded:
             return {"status": "対象外", "set_by": excluded[(no, per)]}
         return {"status": "期限超過" if overdue[per] else "未提出"}
 
-    rows = [{"no": p["no"], "name": p["name"], "end": p["end"],
-             "periods": {per: period_cell(p["no"], per) for per in PERIOD_ORDER}} for p in projects]
+    rows = []
+    for p in projects:
+        start, end, custom = target_period(p)
+        rows.append({"no": p["no"], "name": p["name"], "start": start, "end": end, "custom": custom,
+                     "periods": {per: period_cell(p["no"], per, start, end) for per in PERIOD_ORDER}})
+    # 今月まったく対象にならない現場（着工前など）は下にまとめる
+    rows.sort(key=lambda r: all(c["status"] == "期間外" for c in r["periods"].values()))
+    active_count = sum(1 for r in rows if not all(c["status"] == "期間外" for c in r["periods"].values()))
     # 対象リストに無い工事№で提出があったものも下に出す
     listed = {p["no"] for p in projects}
     extra = [{"no": no, "name": names.get(no, ""), "periods": {per: pers.get(per) for per in PERIOD_ORDER}}
@@ -1865,8 +1912,30 @@ def junpo_status():
     next_ym = (year + 1, 1) if month == 12 else (year, month + 1)
     return render_template("junpo_status.html", info=info, category="safety_patrol", year=year, month=month,
                            rows=rows, extra=extra, periods=list(PERIOD_ORDER), pq=_project_query(),
-                           prev=prev_ym, next=next_ym, deadlines=deadlines,
+                           prev=prev_ym, next=next_ym, deadlines=deadlines, active_count=active_count,
                            kintone_user=request.args.get("kintone_user", "").strip())
+
+
+@app.route("/safety_patrol/status/period", methods=["POST"])
+def junpo_set_period():
+    """現場ごとの提出対象期間を設定（空で保存すると工事マスタの工期に戻す）。"""
+    f = request.form
+    no = f.get("project_no", "").strip()
+    if not no:
+        abort(400)
+    start = f.get("start_date", "").strip()
+    end = f.get("end_date", "").strip()
+    conn = get_db()
+    try:
+        db_execute(conn, "DELETE FROM junpo_periods WHERE project_no=?", (no,))
+        if f.get("reset") != "1" and (start or end):
+            db_execute(conn, "INSERT INTO junpo_periods (project_no, start_date, end_date, set_by, updated_at) "
+                             "VALUES (?, ?, ?, ?, ?)",
+                       (no, start, end, f.get("kintone_user", "").strip(), datetime.now().isoformat(timespec="seconds")))
+        conn.commit()
+    finally:
+        conn.close()
+    return redirect(url_for("junpo_status", year=f.get("year"), month=f.get("month"), **_kintone_args()))
 
 
 @app.route("/safety_patrol/status/exclude", methods=["POST"])

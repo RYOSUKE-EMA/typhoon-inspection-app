@@ -5,6 +5,8 @@
     {% if c.status in ('提出済', '承認済') %}
     <a href="{{ url_for('report_detail', category=category, report_id=c.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}"
        class="badge {{ 'badge-done' if c.status == '承認済' else 'badge-pending' }}">{{ c.status }}</a>
+    {% elif c.status == '期間外' %}
+    <span class="period-out">期間外</span>
     {% elif c.status == '対象外' %}
     <span class="badge badge-none" title="{{ c.set_by }}が対象外に設定">対象外</span>
     {% if editable %}
@@ -36,17 +38,25 @@
   .excl-form { margin-top:4px; }
   .excl-btn { background:none; border:none; color:#7a858c; font-size:0.75rem; cursor:pointer; text-decoration:underline; padding:0; }
   .excl-btn:hover { color:#2f3b42; }
+  .period-out { color:#b0b8bd; font-size:0.8rem; }
+  tr.row-out td { background:#fafbfb; color:#8a949a; }
+  .period-cell { white-space:nowrap; font-size:0.82rem; }
+  .period-cell .custom { color:#1f6fb2; font-weight:700; }
+  .period-form { display:none; margin-top:6px; text-align:left; }
+  .period-form input[type=date] { width:auto; font-size:0.8rem; padding:3px 4px; }
+  .period-form.open { display:block; }
 </style>
 <div class="card">
   <h2><span class="accent-bar"></span>{{ info.label }} 提出状況</h2>
   <p class="footer-note">対象現場：工事№の3〜5桁目が「041」で、工期終了日が今日より後の工事（工事マスタより・1時間ごとに更新）<br>
+    対象期間：初期値は工事マスタの工期（開始〜終了）。「変更」から現場ごとに設定でき、期間外の旬は「期間外」となり赤表示されません。<br>
     提出期限：上旬 {{ month }}/10、中旬 {{ month }}/20、下旬 {{ month }}/{{ deadlines['下旬'] }}。期限を過ぎた未提出は赤く表示します。</p>
   {% set base = ('&' ~ (pq|urlencode)) if pq else '' %}
   <div class="flex" style="align-items:center; margin:12px 0 16px;">
     <a class="btn btn-secondary btn-sm" href="{{ url_for('junpo_status') }}?year={{ prev[0] }}&month={{ prev[1] }}{{ base }}">← 前月</a>
     <span style="font-size:1.25rem; font-weight:700;">{{ year }}年{{ month }}月</span>
     <a class="btn btn-secondary btn-sm" href="{{ url_for('junpo_status') }}?year={{ next[0] }}&month={{ next[1] }}{{ base }}">翌月 →</a>
-    <span style="margin-left:auto;" class="footer-note">対象 {{ rows|length }} 現場</span>
+    <span style="margin-left:auto;" class="footer-note">今月の対象 {{ active_count }} 現場（一覧 {{ rows|length }} 現場）</span>
   </div>
   <div class="table-wrap">
     <table class="list-table">
@@ -54,16 +64,31 @@
         <tr>
           <th class="col-no">工事ナンバー</th>
           <th>工事名</th>
-          <th style="width:110px;">工期終了</th>
+          <th style="width:190px;">対象期間</th>
           {% for per in periods %}<th style="width:130px; text-align:center;">{{ per }}<br><span style="font-weight:400; font-size:0.75rem;">〜{{ month }}/{{ deadlines[per] }}</span></th>{% endfor %}
         </tr>
       </thead>
       <tbody>
         {% for r in rows %}
-        <tr>
+        {% set all_out = r.periods.values()|selectattr('status', 'equalto', '期間外')|list|length == periods|length %}
+        <tr class="{{ 'row-out' if all_out else '' }}">
           <td>{{ r.no }}</td>
           <td>{{ r.name }}</td>
-          <td>{{ r.end }}</td>
+          <td class="period-cell">
+            <span class="{{ 'custom' if r.custom else '' }}" title="{{ '手動設定' if r.custom else '工事マスタの工期' }}">{{ (r.start or '未定')|replace('-', '/') }} 〜 {{ (r.end or '未定')|replace('-', '/') }}</span>
+            <button type="button" class="excl-btn" onclick="this.nextElementSibling.classList.toggle('open')">変更</button>
+            <form method="post" action="{{ url_for('junpo_set_period') }}" class="period-form">
+              <input type="hidden" name="project_no" value="{{ r.no }}">
+              <input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
+              <input type="hidden" name="kintone_user" value="{{ kintone_user }}"><input type="hidden" name="kintone_code" value="{{ pq.get('kintone_code', '') if pq else '' }}">
+              <input type="date" name="start_date" value="{{ r.start }}"> 〜<br>
+              <input type="date" name="end_date" value="{{ r.end }}">
+              <div style="margin-top:4px;">
+                <button type="submit" class="btn btn-primary btn-sm">保存</button>
+                {% if r.custom %}<button type="submit" name="reset" value="1" class="btn btn-secondary btn-sm">工期に戻す</button>{% endif %}
+              </div>
+            </form>
+          </td>
           {% for per in periods %}{{ cell(r.no, per, r.periods[per], true) }}{% endfor %}
         </tr>
         {% endfor %}
