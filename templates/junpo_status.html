@@ -72,7 +72,7 @@
         {% for r in rows %}
         {% set all_out = r.periods.values()|selectattr('status', 'equalto', '期間外')|list|length == periods|length %}
         <tr class="{{ 'row-out' if all_out else '' }}">
-          <td>{{ r.no }}</td>
+          <td>{{ r.no }}<br><a class="excl-btn" href="{{ url_for('junpo_project_pdf', project_no=r.no) }}">一括PDF</a></td>
           <td>{{ r.name }}</td>
           <td class="period-cell">
             <span class="{{ 'custom' if r.custom else '' }}" title="{{ '手動設定' if r.custom else '工事マスタの工期' }}">{{ (r.start or '未定')|replace('-', '/') }} 〜 {{ (r.end or '未定')|replace('-', '/') }}</span>
@@ -105,7 +105,7 @@
       <thead><tr><th class="col-no">工事ナンバー</th><th>工事名</th>{% for per in periods %}<th style="width:130px; text-align:center;">{{ per }}</th>{% endfor %}</tr></thead>
       <tbody>
         {% for r in extra %}
-        <tr><td>{{ r.no }}</td><td>{{ r.name }}</td>{% for per in periods %}{{ cell(r.no, per, r.periods[per] or {'status': '未提出'}, false) }}{% endfor %}</tr>
+        <tr><td>{{ r.no }}<br><a class="excl-btn" href="{{ url_for('junpo_project_pdf', project_no=r.no) }}">一括PDF</a></td><td>{{ r.name }}</td>{% for per in periods %}{{ cell(r.no, per, r.periods[per] or {'status': '未提出'}, false) }}{% endfor %}</tr>
         {% endfor %}
       </tbody>
     </table>

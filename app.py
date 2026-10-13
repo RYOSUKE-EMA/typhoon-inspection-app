@@ -1916,6 +1916,40 @@ def junpo_status():
                            kintone_user=request.args.get("kintone_user", "").strip())
 
 
+@app.route("/safety_patrol/project/<project_no>/pdf")
+def junpo_project_pdf(project_no):
+    """工事ごとに、これまで提出された安全旬報を古い順に1つのPDFへまとめてダウンロード。"""
+    conn = get_db()
+    try:
+        reports = fetchall(db_execute(conn,
+            "SELECT * FROM reports WHERE category='safety_patrol' AND project_no=?", (project_no,)))
+        items_by = {r["id"]: fetchall(db_execute(conn,
+            "SELECT * FROM report_items WHERE report_id=? ORDER BY sort_order", (r["id"],))) for r in reports}
+    finally:
+        conn.close()
+    if not reports:
+        return ("<meta charset='utf-8'><p>この工事の安全旬報はまだ提出されていません。</p>"
+                "<p><a href='javascript:history.back()'>戻る</a></p>", 404)
+
+    def order(r):
+        try:
+            m = int(r["report_month"] or 0)
+        except ValueError:
+            m = 0
+        return ((r["inspect_datetime"] or "")[:4], m, PERIOD_ORDER.get(r["report_period"], 9), r["id"])
+
+    _ensure_pdf_libs()
+    writer = PdfWriter()
+    for r in sorted(reports, key=order):
+        for page in PdfReader(build_safety_patrol_pdf(r, items_by[r["id"]])).pages:
+            writer.add_page(page)
+    out = BytesIO()
+    writer.write(out)
+    out.seek(0)
+    filename = f"{project_no}_安全旬報_一括（{len(reports)}件）_{datetime.now():%Y%m%d}.pdf"
+    return send_file(out, mimetype="application/pdf", as_attachment=True, download_name=filename)
+
+
 @app.route("/safety_patrol/status/period", methods=["POST"])
 def junpo_set_period():
     """現場ごとの提出対象期間を設定（空で保存すると工事マスタの工期に戻す）。"""
