@@ -412,7 +412,32 @@ def build_safety_patrol_pdf(report, items):
     # ヘッダー：工事NO・工事名・作業所長・点検記入者
     c.setFont("HeiseiKakuGo-W5", 9)
     c.drawString(80, y(101.5), report["project_no"] or "")
-    c.drawString(172, y(101.5), report["project_name"] or "")
+    # 工事名は下線（作業所長欄の手前まで）に収める：縮小→それでも長ければ2行
+    name = report["project_name"] or ""
+    name_w = 120
+    font = "HeiseiKakuGo-W5"
+    size = 9
+    while size > 7 and pdfmetrics.stringWidth(name, font, size) > name_w:
+        size -= 0.5
+    if pdfmetrics.stringWidth(name, font, size) <= name_w:
+        c.setFont(font, size)
+        c.drawString(172, y(101.5), name)
+    else:
+        size = 6.5
+        while size > 4.5 and pdfmetrics.stringWidth(name, font, size) > name_w * 2:
+            size -= 0.5
+        line1 = ""
+        for ch in name:
+            if pdfmetrics.stringWidth(line1 + ch, font, size) > name_w:
+                break
+            line1 += ch
+        line2 = name[len(line1):]
+        while line2 and pdfmetrics.stringWidth(line2, font, size) > name_w:
+            line2 = line2[:-1]
+        c.setFont(font, size)
+        c.drawString(172, y(100.5 - size - 0.8), line1)
+        c.drawString(172, y(100.5), line2)
+    c.setFont("HeiseiKakuGo-W5", 9)
     c.drawString(348, y(101.5), report["site_manager"] or "")
     c.drawString(438, y(101.5), report["inspector"] or "")
 
