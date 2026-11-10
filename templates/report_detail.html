@@ -1,5 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .badge-returned { background:#fdeceb; color:#b3382c; border:1px solid #e8a39b; font-weight:700; }
+  .return-box { border:1px solid #e8a39b; background:#fdf4f3; border-radius:6px; padding:14px 16px; margin:0 0 20px; }
+  .return-title { font-weight:700; color:#b3382c; margin-bottom:6px; }
+  .return-reason { white-space:pre-wrap; margin-bottom:10px; }
+  .btn-return { background:#fff; color:#b3382c; border:1px solid #b3382c; }
+  .btn-return:hover { background:#fdeceb; }
+</style>
 <div class="card">
   <h2><span class="accent-bar"></span>{{ info.label }} 詳細</h2>
   <table style="margin-bottom:20px;">
@@ -27,6 +35,8 @@
     <tr><th>状態</th><td>
       {% if report.status == '確認済' %}
       <span class="badge badge-done">確認済</span>
+      {% elif report.status == '差し戻し' %}
+      <span class="badge badge-returned">差し戻し中</span>
       {% else %}
       <span class="badge badge-pending">{{ report.status if report.status != "未確認" else "TL承認待ち" }}</span>
       {% endif %}
@@ -34,6 +44,14 @@
     {% endif %}
   </table>
 
+  {% if report.status == '差し戻し' and returns %}
+  {% set lr = returns[-1] %}
+  <div class="return-box">
+    <div class="return-title">差し戻されています（{{ lr.role }}：{{ lr.returned_by }}　{{ lr.returned_at | replace("T", " ") }}）</div>
+    <div class="return-reason">{{ lr.reason }}</div>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('edit_report', category=category, report_id=report.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">修正して再提出する</a>
+  </div>
+  {% endif %}
   <h2><span class="accent-bar"></span>点検項目</h2>
   {% if legend %}<div class="legend">{{ legend }}</div>{% endif %}
   <table class="item-table">
@@ -114,7 +132,12 @@
             <label>コメント（任意）</label>
             <textarea name="approver_comment" rows="2"></textarea>
           </div>
-          <button type="submit" class="btn btn-success">{{ role }}承認する</button>
+          <div class="flex">
+            <button type="submit" class="btn btn-success">{{ role }}承認する</button>
+            {% if report.status != '差し戻し' %}
+            <a class="btn btn-return" href="{{ url_for('return_report', category=category, report_id=report.id, role=role) }}{% if pq %}&{{ pq|urlencode }}{% endif %}">差し戻し</a>
+            {% endif %}
+          </div>
         </form>
         {% else %}
         <p class="footer-note">前の段階の承認待ちです。</p>
@@ -124,6 +147,25 @@
     </div>
     {% endfor %}
   {% endif %}
+</div>
+{% endif %}
+
+{% if returns %}
+<div class="card">
+  <h2><span class="accent-bar"></span>差し戻し履歴</h2>
+  <table>
+    <thead><tr><th style="width:150px;">差し戻し日時</th><th style="width:150px;">差し戻した人</th><th>理由</th><th style="width:150px;">再提出日時</th></tr></thead>
+    <tbody>
+      {% for r in returns %}
+      <tr>
+        <td>{{ r.returned_at | replace("T", " ") }}</td>
+        <td>{{ r.role }}：{{ r.returned_by }}</td>
+        <td style="white-space:pre-wrap;">{{ r.reason }}</td>
+        <td>{{ (r.resubmitted_at or "未再提出") | replace("T", " ") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% endif %}
 

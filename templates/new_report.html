@@ -191,7 +191,10 @@
     </table>
 
     <div class="flex" style="margin-top:20px;">
-      {% if edit %}
+      {% if edit and resubmit %}
+      <button type="submit" class="btn btn-primary">修正して再提出（TLへ通知）</button>
+      <a href="{{ url_for('report_detail', category=category, report_id=edit.id) }}" class="btn btn-secondary">キャンセル</a>
+      {% elif edit %}
       <button type="submit" class="btn btn-primary">更新する</button>
       <a href="{{ url_for('report_detail', category=category, report_id=edit.id) }}" class="btn btn-secondary">キャンセル</a>
       {% else %}

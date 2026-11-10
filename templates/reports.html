@@ -63,6 +63,8 @@
             <td>
               {% if r.status == '確認済' %}
               <span class="badge badge-done">確認済</span>
+              {% elif r.status == '差し戻し' %}
+              <span class="badge" style="background:#fdeceb; color:#b3382c; border:1px solid #e8a39b; font-weight:700;">差し戻し中</span>
               {% else %}
               <span class="badge badge-pending">{{ r.status if r.status != "未確認" else "TL承認待ち" }}</span>
               {% endif %}

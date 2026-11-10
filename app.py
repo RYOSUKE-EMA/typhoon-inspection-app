@@ -1287,7 +1287,7 @@ def fetchone(cur):
 
 
 # スキーマ版数。マイグレーションを追加したら+1する（コールドスタート時の初期化スキップ判定に使用）
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 
 def init_db():
@@ -1328,7 +1328,7 @@ def init_db():
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_notes TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS submitted_by TEXT")
             for col in ("assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no",
-                        "notify_tl", "notify_gl", "notify_bl", "notify_safety"):
+                        "notify_tl", "notify_gl", "notify_bl", "notify_safety", "submitted_code"):
                 cur.execute(f"ALTER TABLE reports ADD COLUMN IF NOT EXISTS {col} TEXT")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS notify_users (
@@ -1399,6 +1399,16 @@ def init_db():
                 updated_by TEXT,
                 updated_at TEXT NOT NULL,
                 UNIQUE (category, subtype)
+            )""")
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS report_returns (
+                id SERIAL PRIMARY KEY,
+                report_id INTEGER NOT NULL,
+                role TEXT,
+                returned_by TEXT,
+                reason TEXT,
+                returned_at TEXT NOT NULL,
+                resubmitted_at TEXT
             )""")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS junpo_periods (
@@ -1512,6 +1522,15 @@ def init_db():
                 set_by TEXT,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS report_returns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_id INTEGER NOT NULL,
+                role TEXT,
+                returned_by TEXT,
+                reason TEXT,
+                returned_at TEXT NOT NULL,
+                resubmitted_at TEXT
+            );
             CREATE TABLE IF NOT EXISTS junpo_exclusions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_no TEXT NOT NULL,
@@ -1545,7 +1564,7 @@ def init_db():
                 conn.execute("ALTER TABLE reports ADD COLUMN subtype TEXT")
             for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes", "submitted_by",
                         "assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no",
-                        "notify_tl", "notify_gl", "notify_bl", "notify_safety"):
+                        "notify_tl", "notify_gl", "notify_bl", "notify_safety", "submitted_code"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
             res_cols = [r[1] for r in conn.execute("PRAGMA table_info(resources)").fetchall()]
@@ -1619,7 +1638,7 @@ def index():
     try:
         counts = {category: 0 for category in INSPECTION_TYPES}
         rows = fetchall(db_execute(conn,
-            "SELECT category, COUNT(*) AS c FROM reports WHERE status<>? GROUP BY category", ("確認済",)))
+            "SELECT category, COUNT(*) AS c FROM reports WHERE status<>? AND status<>? GROUP BY category", ("確認済", "差し戻し")))
         for r in rows:
             if r["category"] in counts and INSPECTION_TYPES[r["category"]].get("approval_flow"):
                 counts[r["category"]] = r["c"]
@@ -1666,6 +1685,7 @@ def new_report(category):
         meeting_attendees = f.get("meeting_attendees", "").strip()
         meeting_notes = f.get("meeting_notes", "").strip()
         submitted_by = f.get("kintone_user", "").strip()
+        submitted_code = f.get("kintone_code", "").strip()
         assembler_name = f.get("assembler_name", "").strip()
         assembler_qual = f.get("assembler_qual", "").strip()
         assembler_qual_no = f.get("assembler_qual_no", "").strip()
@@ -1690,12 +1710,12 @@ def new_report(category):
                 INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
                                       site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
                                       assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
-                                      notify_tl, notify_gl, notify_bl, notify_safety)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                      notify_tl, notify_gl, notify_bl, notify_safety, submitted_code)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", created_at,
                   site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
                   assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
-                  notify_tl, notify_gl, notify_bl, notify_safety))
+                  notify_tl, notify_gl, notify_bl, notify_safety, submitted_code))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
             else:
@@ -1824,13 +1844,35 @@ def edit_report(category, report_id):
                 sync_items.append({"item_name": item["item_name"], "result": result, "note": note})
             conn.commit()
 
-            sync_report_to_kintone({
+            # 差し戻し中の報告書を保存した場合は「再提出」として承認フローを最初からやり直す
+            resubmit = report["status"] == "差し戻し"
+            new_status = report["status"]
+            last_return = None
+            if resubmit:
+                steps = flow_steps_of(info)
+                new_status = f"{step_label(steps[0])}承認待ち" if steps else "未確認"
+                now_iso = datetime.now().isoformat(timespec="seconds")
+                db_execute(conn, "UPDATE reports SET status=? WHERE id=?", (new_status, report_id))
+                last_return = fetchone(db_execute(conn,
+                    "SELECT * FROM report_returns WHERE report_id=? ORDER BY id DESC LIMIT 1", (report_id,)))
+                if last_return:
+                    db_execute(conn, "UPDATE report_returns SET resubmitted_at=? WHERE id=?", (now_iso, last_return["id"]))
+                conn.commit()
+
+            kintone_record_id = sync_report_to_kintone({
                 "id": report_id, "category": category, "project_name": project_name, "project_no": project_no,
                 "inspect_datetime": inspect_datetime, "inspector": inspector, "site_manager": site_manager,
                 "report_month": report_month, "report_period": report_period, "report_round": report_round,
                 "meeting_date": meeting_date, "meeting_attendees": meeting_attendees, "meeting_notes": meeting_notes,
-                "status": report["status"], "created_at": report["created_at"],
+                "status": new_status, "created_at": report["created_at"],
             }, sync_items)
+            if resubmit:
+                reason = (last_return["reason"] if last_return else "") or ""
+                notify_kintone_users(kintone_record_id, [report["notify_tl"] or ""],
+                                     f"【差し戻し後の再提出】{info['label']}が差し戻し後に修正・再提出されました"
+                                     f"（工事名：{project_name} / 点検者：{inspector}）。"
+                                     + (f"前回の差し戻し理由：{reason}。" if reason else "")
+                                     + "再度承認をお願いします。")
             return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
 
         checklist = [item["item_name"] for item in items]
@@ -1842,6 +1884,7 @@ def edit_report(category, report_id):
     return render_template("new_report.html", category=category, info=info, checklist=checklist,
                            options=result_options, subtype=subtype, subtype_label=subtype_label, now=now,
                            current_month=current_month, edit=report, edit_items=items, legend=RESULT_LEGEND,
+                           resubmit=(report["status"] == "差し戻し"),
                            guide_names=_guide_item_names(category, subtype or ""),
                            kintone_user=request.args.get("kintone_user", "").strip(),
                            kintone_code=request.args.get("kintone_code", "").strip())
@@ -1887,7 +1930,7 @@ def junpo_status():
     for r in reports:
         no = str(r["project_no"] or "").strip()
         names.setdefault(no, r["project_name"] or "")
-        st = "承認済" if r["status"] == "確認済" else "提出済"
+        st = "承認済" if r["status"] == "確認済" else ("差し戻し" if r["status"] == "差し戻し" else "提出済")
         cur = cells.setdefault(no, {}).get(r["report_period"])
         if cur is None or (st == "承認済" and cur["status"] != "承認済"):
             cells[no][r["report_period"]] = {"status": st, "id": r["id"]}
@@ -2105,6 +2148,7 @@ def report_detail(category, report_id):
             abort(404)
         items = fetchall(db_execute(conn, "SELECT * FROM report_items WHERE report_id=? ORDER BY sort_order", (report_id,)))
         approvals = fetchall(db_execute(conn, "SELECT * FROM approvals WHERE report_id=? ORDER BY step", (report_id,)))
+        returns = fetchall(db_execute(conn, "SELECT * FROM report_returns WHERE report_id=? ORDER BY id", (report_id,)))
     finally:
         conn.close()
     steps = flow_steps_of(info)
@@ -2129,7 +2173,7 @@ def report_detail(category, report_id):
                            notify_names=notify_names,
                            guide_names=_guide_item_names(category, report["subtype"] or ""),
                            flow=steps, steps=steps, approvals=approvals, approvals_map=approvals_map,
-                           current_step=current_step, flow_label=flow_label,
+                           current_step=current_step, flow_label=flow_label, returns=returns,
                            kintone_user=request.args.get("kintone_user", "").strip(),
                            kintone_code=request.args.get("kintone_code", "").strip(),
                            can_approve=_can_approve_map(report, request.args.get("kintone_code", "").strip()),
@@ -2401,6 +2445,69 @@ def approve_report(category, report_id):
         codes = [code_map.get(r) or "" for r in next_roles]
         notify_kintone_users(kintone_record_id, codes,
                              f"{info['label']}の{step_label(steps[current])}承認が完了しました（工事名：{report['project_name']}）。次の承認をお願いします。")
+    return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
+
+
+def _submitter_code(report):
+    """提出者のkintoneログイン名。旧データは提出者の表示名からユーザー一覧で引く。"""
+    code = report["submitted_code"] if "submitted_code" in report.keys() else None
+    if code:
+        return code
+    name = report["submitted_by"] or ""
+    for u in fetch_kintone_users():
+        if name and u["name"] == name:
+            return u["code"]
+    return ""
+
+
+@app.route("/reports/<category>/<int:report_id>/return", methods=["GET", "POST"])
+def return_report(category, report_id):
+    """承認者による差し戻し（理由を入力 → 提出者へ通知 → 承認は最初からやり直し）。"""
+    info = get_inspection_type(category)
+    steps = flow_steps_of(info)
+    src = request.form if request.method == "POST" else request.args
+    kintone_user = src.get("kintone_user", "").strip()
+    kintone_code = src.get("kintone_code", "").strip()
+    role = src.get("role", "").strip()
+    conn = get_db()
+    try:
+        report = fetchone(db_execute(conn, "SELECT * FROM reports WHERE id=? AND category=?", (report_id, category)))
+        if not report:
+            abort(404)
+        approvals = fetchall(db_execute(conn, "SELECT * FROM approvals WHERE report_id=?", (report_id,)))
+        done = {(a["step"], a["role"]) for a in approvals}
+        current = next((i for i, rs in enumerate(steps) if not all((i, r) in done for r in rs)), None)
+        # 差し戻せるのは、現在の段でまだ承認していない担当承認者のみ
+        allowed = (current is not None and role in steps[current] and (current, role) not in done
+                   and report["status"] != "差し戻し"
+                   and _can_approve_map(report, kintone_code).get(role))
+        if not allowed:
+            return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
+        if request.method == "GET":
+            return render_template("return_report.html", category=category, info=info, report=report, role=role,
+                                   kintone_user=kintone_user, kintone_code=kintone_code, pq=_project_query())
+        reason = request.form.get("reason", "").strip()
+        if not reason:
+            return render_template("return_report.html", category=category, info=info, report=report, role=role,
+                                   kintone_user=kintone_user, kintone_code=kintone_code, pq=_project_query(),
+                                   error="差し戻し理由を入力してください。")
+        now = datetime.now().isoformat(timespec="seconds")
+        db_execute(conn, "INSERT INTO report_returns (report_id, role, returned_by, reason, returned_at) VALUES (?,?,?,?,?)",
+                   (report_id, role, kintone_user, reason, now))
+        # 承認は最初の段からやり直し
+        db_execute(conn, "DELETE FROM approvals WHERE report_id=?", (report_id,))
+        db_execute(conn, "UPDATE reports SET status=? WHERE id=?", ("差し戻し", report_id))
+        conn.commit()
+        items = fetchall(db_execute(conn, "SELECT * FROM report_items WHERE report_id=? ORDER BY sort_order", (report_id,)))
+    finally:
+        conn.close()
+    report = dict(report)
+    report["status"] = "差し戻し"
+    kintone_record_id = sync_report_to_kintone(report, items)
+    notify_kintone_users(kintone_record_id, [_submitter_code(report)],
+                         f"【差し戻し】{info['label']}が{role}（{kintone_user}）により差し戻されました"
+                         f"（工事名：{report['project_name']}）。差し戻し理由：{reason}。"
+                         "内容を修正して再提出してください。")
     return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
 
 

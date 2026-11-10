@@ -2,9 +2,9 @@
 {% block content %}
 {% macro cell(no, per, c, editable) -%}
   <td class="status-cell">
-    {% if c.status in ('提出済', '承認済') %}
+    {% if c.status in ('提出済', '承認済', '差し戻し') %}
     <a href="{{ url_for('report_detail', category=category, report_id=c.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}"
-       class="badge {{ 'badge-done' if c.status == '承認済' else 'badge-pending' }}">{{ c.status }}</a>
+       class="badge {{ 'badge-done' if c.status == '承認済' else ('badge-overdue' if c.status == '差し戻し' else 'badge-pending') }}">{{ c.status }}</a>
     {% elif c.status == '期間外' %}
     <span class="period-out">期間外</span>
     {% elif c.status == '対象外' %}
