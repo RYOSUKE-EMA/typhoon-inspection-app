@@ -79,6 +79,8 @@ def fetch_kintone_users():
 # 工事マスタのキャッシュ（サーバレスの同一インスタンス内で10分保持）
 _projects_cache = {"data": None, "at": 0.0}
 _junpo_projects_cache = {"data": None, "at": 0.0}
+# 041以外でも安全旬報の対象にする工事№（小工事など・個別指定）
+JUNPO_EXTRA_PROJECTS = ("81042262",)
 
 
 def fetch_junpo_projects():
@@ -110,7 +112,7 @@ def fetch_junpo_projects():
             for r in recs:
                 no = str(r["KojiNo"]["value"] or "").split(".")[0]
                 end = r["mkbJsYmd"]["value"] or r["mkuKsYmd"]["value"] or ""
-                if len(no) != 8 or no[2:5] != "041" or end <= today:
+                if len(no) != 8 or (no[2:5] != "041" and no not in JUNPO_EXTRA_PROJECTS) or end <= today:
                     continue
                 if no not in projects:
                     start = r["mkbJkYmd"]["value"] or r["mkuKkYmd"]["value"] or ""
