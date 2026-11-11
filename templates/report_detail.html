@@ -48,7 +48,7 @@
   {% set lr = returns[-1] %}
   <div class="return-box">
     <div class="return-title">差し戻されています（{{ lr.role }}：{{ lr.returned_by }}　{{ lr.returned_at | replace("T", " ") }}）</div>
-    <div class="return-reason">{{ lr.reason }}</div>
+    {% if lr.reason %}<div class="return-reason">{{ lr.reason }}</div>{% endif %}
     <a class="btn btn-primary btn-sm" href="{{ url_for('edit_report', category=category, report_id=report.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">修正して再提出する</a>
   </div>
   {% endif %}

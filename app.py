@@ -2489,10 +2489,6 @@ def return_report(category, report_id):
             return render_template("return_report.html", category=category, info=info, report=report, role=role,
                                    kintone_user=kintone_user, kintone_code=kintone_code, pq=_project_query())
         reason = request.form.get("reason", "").strip()
-        if not reason:
-            return render_template("return_report.html", category=category, info=info, report=report, role=role,
-                                   kintone_user=kintone_user, kintone_code=kintone_code, pq=_project_query(),
-                                   error="差し戻し理由を入力してください。")
         now = datetime.now().isoformat(timespec="seconds")
         db_execute(conn, "INSERT INTO report_returns (report_id, role, returned_by, reason, returned_at) VALUES (?,?,?,?,?)",
                    (report_id, role, kintone_user, reason, now))
@@ -2508,8 +2504,8 @@ def return_report(category, report_id):
     kintone_record_id = sync_report_to_kintone(report, items)
     notify_kintone_users(kintone_record_id, [_submitter_code(report)],
                          f"【差し戻し】{info['label']}が{role}（{kintone_user}）により差し戻されました"
-                         f"（工事名：{report['project_name']}）。差し戻し理由：{reason}。"
-                         "内容を修正して再提出してください。")
+                         f"（工事名：{report['project_name']}）。" + (f"差し戻し理由：{reason}。" if reason else "")
+                         + "内容を修正して再提出してください。")
     return redirect(url_for("report_detail", category=category, report_id=report_id, **_kintone_args()))
 
 
