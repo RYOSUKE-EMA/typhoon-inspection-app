@@ -58,9 +58,7 @@ for s in src:
     rid = s["report_id"]["value"]
     if rid in done:
         continue
-    if s["status"]["value"] != "確認済":
-        skipped.append((rid, s["project_name"]["value"], "未承認（切替時に対応）"))
-        continue
+    pending = s["status"]["value"] != "確認済"
     koji_no = NO_FIX.get(rid, s["project_no"]["value"] or "")
     if not re.fullmatch(r"\d{8}", koji_no):
         skipped.append((rid, s["project_name"]["value"], f"工事№が不正（{s['project_no']['value']}）"))
@@ -106,6 +104,7 @@ for s in src:
             "note": {"value": row["value"]["item_note"]["value"]},
         }} for row in s["checklist"]["value"]]},
     }
+    rec["_action"] = "移行（承認待ち）" if pending else "移行データ登録"
     plan.append((rid, rec))
 
 print(f"移行対象 {len(plan)} 件／スキップ {len(skipped)} 件／移行済 {len(done)} 件")
@@ -127,8 +126,12 @@ send("PUT", "preview/app/status.json", {"app": APP, "states": tmp_states})
 deploy(APP)
 try:
     for rid, rec in plan:
+        action = rec.pop("_action")
         new_id = send("POST", "record.json", {"app": APP, "record": rec})["id"]
-        send("PUT", "record/status.json", {"app": APP, "id": new_id, "action": "移行データ登録"})
+        body = {"app": APP, "id": new_id, "action": action}
+        if action == "移行（承認待ち）":
+            body["assignee"] = rec["approver_tl"]["value"][0]["code"]
+        send("PUT", "record/status.json", body)
         print("  migrated", rid, "->", new_id)
 finally:
     send("PUT", "preview/app/status.json", {"app": APP, "states": status["states"]})

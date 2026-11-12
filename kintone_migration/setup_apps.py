@@ -101,6 +101,7 @@ send("PUT", "preview/app/status.json", {"app": junpo, "enable": True, "states": 
     {"name": "差し戻す", "from": "TL承認待ち", "to": "差し戻し", "filterCond": ""},
     {"name": "再提出する（差し戻し後）", "from": "差し戻し", "to": "TL承認待ち", "filterCond": ""},
     {"name": "移行データ登録", "from": "未提出", "to": "確認済", "filterCond": 'legacy_id != ""'},
+    {"name": "移行（承認待ち）", "from": "未提出", "to": "TL承認待ち", "filterCond": 'legacy_id != ""'},
 ]})
 
 # 一覧
