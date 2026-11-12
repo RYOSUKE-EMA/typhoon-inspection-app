@@ -320,7 +320,7 @@
             '" data-search="' + esc((r.project_no + ' ' + r.project_name + ' ' + r.inspector).toLowerCase()) + '">' +
             '<td>' + esc(r.project_no) + '</td><td>' + esc(r.project_name) + '</td>' +
             (cat === 'scaffold' ? '<td>' + esc(r.subtype) + '</td>' : '') +
-            '<td>' + esc(r.inspector) + '</td><td style="white-space:nowrap;">' + esc(r.inspect_date) + '</td>' +
+            '<td style="white-space:nowrap;">' + esc(r.inspector) + '</td><td style="white-space:nowrap;">' + esc(r.inspect_date) + '</td>' +
             (info.flow.length ? '<td style="white-space:nowrap;">' + statusBadge(r.status) + '</td>' : '') +
             '<td style="white-space:nowrap;"><a class="btn btn-primary btn-sm" href="#/reports/' + cat + '/' + r.id + '">詳細</a></td></tr>';
         });

@@ -59,7 +59,7 @@
             {% if info.subtypes %}
             <td>{{ info.subtypes[r.subtype].label if r.subtype and r.subtype in info.subtypes else "" }}</td>
             {% endif %}
-            <td>{{ r.inspector }}</td>
+            <td style="white-space:nowrap;">{{ r.inspector }}</td>
             <td style="white-space:nowrap;">{{ r.inspect_datetime[:10] }}</td>
             {% if info.approval_flow %}
             <td style="white-space:nowrap;">
