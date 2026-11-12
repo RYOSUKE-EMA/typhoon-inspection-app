@@ -2042,6 +2042,79 @@ def junpo_set_period():
     return redirect(url_for("junpo_status", year=f.get("year"), month=f.get("month"), **_kintone_args()))
 
 
+@app.route("/scaffold/status")
+def scaffold_status():
+    """足場点検記録の提出状況（対象現場×日付のカレンダー）。対象現場・対象期間は安全旬報と共通。"""
+    info = get_inspection_type("scaffold")
+    now = datetime.now()
+    try:
+        year = int(request.args.get("year", now.year))
+        month = int(request.args.get("month", now.month))
+    except ValueError:
+        year, month = now.year, now.month
+    import calendar as _cal
+    last_day = _cal.monthrange(year, month)[1]
+    projects = fetch_junpo_projects()
+    ym = f"{year}-{month:02d}"
+    conn = get_db()
+    try:
+        reports = fetchall(db_execute(conn,
+            "SELECT id, project_no, project_name, subtype, inspect_datetime FROM reports "
+            "WHERE category='scaffold' AND inspect_datetime LIKE ? ORDER BY inspect_datetime", (f"{ym}-%",)))
+        last_rows = fetchall(db_execute(conn,
+            "SELECT project_no, MAX(inspect_datetime) AS last FROM reports WHERE category='scaffold' GROUP BY project_no"))
+        period_rows = fetchall(db_execute(conn, "SELECT project_no, start_date, end_date FROM junpo_periods"))
+    finally:
+        conn.close()
+    custom_periods = {p["project_no"]: p for p in period_rows}
+    last_by_no = {str(r["project_no"] or "").strip(): (r["last"] or "")[:10] for r in last_rows}
+    subtypes = info.get("subtypes", {})
+    # project_no → day → [{"id", "label"}]
+    by_day = {}
+    names = {}
+    for r in reports:
+        no = str(r["project_no"] or "").strip()
+        names.setdefault(no, r["project_name"] or "")
+        day = int((r["inspect_datetime"] or "")[8:10] or 0)
+        label = subtypes.get(r["subtype"], {}).get("label", "") if r["subtype"] else ""
+        by_day.setdefault(no, {}).setdefault(day, []).append({"id": r["id"], "label": label})
+    days = list(range(1, last_day + 1))
+    weekdays = {d: "月火水木金土日"[date(year, month, d).weekday()] for d in days}
+    today = now.date()
+
+    def build_row(no, name, start, end, custom):
+        cells = {}
+        for d in days:
+            iso = f"{ym}-{d:02d}"
+            out = (start and iso < start) or (end and iso > end)
+            cells[d] = {"recs": by_day.get(no, {}).get(d, []), "out": bool(out),
+                        "future": date(year, month, d) > today}
+        count = sum(len(v) for v in by_day.get(no, {}).values())
+        last = last_by_no.get(no, "")
+        elapsed = (today - date.fromisoformat(last)).days if last else None
+        all_out = all(c["out"] for c in cells.values())
+        return {"no": no, "name": name, "start": start, "end": end, "custom": custom, "cells": cells,
+                "count": count, "last": last, "elapsed": elapsed, "all_out": all_out}
+
+    rows = []
+    for p in projects:
+        cp = custom_periods.get(p["no"])
+        start, end, custom = ((cp["start_date"] or "", cp["end_date"] or "", True) if cp
+                              else (p.get("start", ""), p.get("end", ""), False))
+        rows.append(build_row(p["no"], p["name"], start, end, custom))
+    rows.sort(key=lambda r: r["all_out"])
+    listed = {p["no"] for p in projects}
+    extra = [build_row(no, names.get(no, ""), "", "", False) for no in sorted(by_day) if no not in listed]
+    prev_ym = (year - 1, 12) if month == 1 else (year, month - 1)
+    next_ym = (year + 1, 1) if month == 12 else (year, month + 1)
+    return render_template("scaffold_status.html", info=info, category="scaffold", year=year, month=month,
+                           days=days, weekdays=weekdays, rows=rows, extra=extra, pq=_project_query(),
+                           prev=prev_ym, next=next_ym,
+                           active_count=sum(1 for r in rows if not r["all_out"]),
+                           today_key=f"{today.year}-{today.month}-{today.day}",
+                           kintone_user=request.args.get("kintone_user", "").strip())
+
+
 @app.route("/safety_patrol/status/exclude", methods=["POST"])
 def junpo_exclude():
     """旬ごとの提出対象外を手動で切り替える（action=on/off）。"""

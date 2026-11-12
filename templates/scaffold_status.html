@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .cal { border-collapse:collapse; font-size:0.8rem; }
+  .cal th, .cal td { border:1px solid var(--line-soft, #e3e6e8); padding:4px 3px; text-align:center; }
+  .cal th.day { width:26px; min-width:26px; font-weight:500; }
+  .cal th.sat { color:#1f6fb2; } .cal th.sun { color:#b3382c; }
+  .cal td.left { text-align:left; white-space:nowrap; padding:4px 8px; }
+  .cal td.name { text-align:left; min-width:220px; max-width:320px; white-space:normal; padding:4px 8px; }
+  .cal td.out { background:#f3f4f6; }
+  .cal td.today { outline:2px solid #1f6fb2; outline-offset:-2px; }
+  .cal a.dot { display:inline-block; min-width:18px; height:18px; line-height:18px; border-radius:9px;
+               background:#1f7a3a; color:#fff; font-size:0.72rem; font-weight:700; text-decoration:none; }
+  .cal tr.row-out td { color:#8a949a; }
+  .elapsed-warn { color:#b3382c; font-weight:700; }
+  .period-small { font-size:0.75rem; color:#5b656b; }
+  .period-small .custom { color:#1f6fb2; font-weight:700; }
+</style>
+<div class="card">
+  <h2><span class="accent-bar"></span>{{ info.label }} 提出状況</h2>
+  <p class="footer-note">対象現場と対象期間は安全旬報の提出状況と共通です（期間の変更は安全旬報の提出状況画面から）。<br>
+    点検記録がある日に緑の印（数字は件数）を表示し、クリックするとその記録を開きます。灰色は対象期間外です。最終点検から7日以上空いている現場は経過日数を赤で表示します。</p>
+  {% set base = ('&' ~ (pq|urlencode)) if pq else '' %}
+  <div class="flex" style="align-items:center; margin:12px 0 16px;">
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('scaffold_status') }}?year={{ prev[0] }}&month={{ prev[1] }}{{ base }}">← 前月</a>
+    <span style="font-size:1.25rem; font-weight:700;">{{ year }}年{{ month }}月</span>
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('scaffold_status') }}?year={{ next[0] }}&month={{ next[1] }}{{ base }}">翌月 →</a>
+    <span style="margin-left:auto;" class="footer-note">今月の対象 {{ active_count }} 現場（一覧 {{ rows|length }} 現場）</span>
+  </div>
+  {% macro calrow(r) -%}
+  <tr class="{{ 'row-out' if r.all_out else '' }}">
+    <td class="left">{{ r.no }}</td>
+    <td class="name">{{ r.name }}{% if r.start or r.end %}<br><span class="period-small"><span class="{{ 'custom' if r.custom else '' }}">{{ (r.start or '未定')|replace('-', '/') }} 〜 {{ (r.end or '未定')|replace('-', '/') }}</span></span>{% endif %}</td>
+    <td>{{ r.count }}</td>
+    <td class="left">{{ r.last|replace('-', '/') if r.last else '－' }}{% if r.elapsed is not none %}<br><span class="{{ 'elapsed-warn' if r.elapsed >= 7 and not r.all_out else 'period-small' }}">{{ r.elapsed }}日前</span>{% endif %}</td>
+    {% for d in days %}
+    {% set c = r.cells[d] %}
+    <td class="{{ 'out' if c.out else '' }} {{ 'today' if (year ~ '-' ~ month ~ '-' ~ d) == today_key else '' }}">
+      {% if c.recs %}<a class="dot" title="{% for x in c.recs %}{{ x.label }} {% endfor %}" href="{{ url_for('report_detail', category=category, report_id=c.recs[-1].id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">{{ c.recs|length }}</a>{% endif %}
+    </td>
+    {% endfor %}
+  </tr>
+  {%- endmacro %}
+  <div class="table-wrap" style="overflow-x:auto;">
+    <table class="cal">
+      <thead>
+        <tr>
+          <th>工事№</th><th>工事名・対象期間</th><th>今月<br>件数</th><th>最終点検</th>
+          {% for d in days %}<th class="day {{ 'sat' if weekdays[d] == '土' else ('sun' if weekdays[d] == '日' else '') }}">{{ d }}<br>{{ weekdays[d] }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}{{ calrow(r) }}{% endfor %}
+        {% if not rows %}<tr><td colspan="{{ 4 + days|length }}">対象現場が取得できませんでした。</td></tr>{% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% if extra %}
+  <h3 style="margin-top:22px; font-size:1rem;">対象リスト外の工事№で記録されたもの</h3>
+  <div class="table-wrap" style="overflow-x:auto;">
+    <table class="cal">
+      <thead><tr><th>工事№</th><th>工事名</th><th>今月<br>件数</th><th>最終点検</th>{% for d in days %}<th class="day">{{ d }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for r in extra %}{{ calrow(r) }}{% endfor %}</tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+<div class="flex">
+  <a class="btn btn-secondary" href="{{ url_for('reports_list', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">一覧に戻る</a>
+</div>
+{% endblock %}

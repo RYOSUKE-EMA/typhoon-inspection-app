@@ -6,6 +6,8 @@
     <a class="btn btn-primary" href="{{ url_for('new_report', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">＋ 新規作成</a>
     {% if category == 'safety_patrol' %}
     <a class="btn btn-secondary" href="{{ url_for('junpo_status') }}{% if pq %}?{{ pq|urlencode }}{% endif %}">提出状況</a>
+    {% elif category == 'scaffold' %}
+    <a class="btn btn-secondary" href="{{ url_for('scaffold_status') }}{% if pq %}?{{ pq|urlencode }}{% endif %}">提出状況</a>
     {% endif %}
     <a class="btn btn-secondary" href="{{ url_for('resources_list', category=category) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">資料集</a>
     {% if can_edit %}
