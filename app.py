@@ -1289,7 +1289,7 @@ def fetchone(cur):
 
 
 # スキーマ版数。マイグレーションを追加したら+1する（コールドスタート時の初期化スキップ判定に使用）
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 def init_db():
@@ -1330,7 +1330,7 @@ def init_db():
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS meeting_notes TEXT")
             cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS submitted_by TEXT")
             for col in ("assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no",
-                        "notify_tl", "notify_gl", "notify_bl", "notify_safety", "submitted_code"):
+                        "notify_tl", "notify_gl", "notify_bl", "notify_safety", "submitted_code", "inspect_reason"):
                 cur.execute(f"ALTER TABLE reports ADD COLUMN IF NOT EXISTS {col} TEXT")
             cur.execute("""
             CREATE TABLE IF NOT EXISTS notify_users (
@@ -1566,7 +1566,7 @@ def init_db():
                 conn.execute("ALTER TABLE reports ADD COLUMN subtype TEXT")
             for col in ("site_manager", "report_month", "report_period", "report_round", "meeting_date", "meeting_attendees", "meeting_notes", "submitted_by",
                         "assembler_name", "assembler_qual", "assembler_qual_no", "inspector_qual", "inspector_qual_no",
-                        "notify_tl", "notify_gl", "notify_bl", "notify_safety", "submitted_code"):
+                        "notify_tl", "notify_gl", "notify_bl", "notify_safety", "submitted_code", "inspect_reason"):
                 if col not in cols:
                     conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
             res_cols = [r[1] for r in conn.execute("PRAGMA table_info(resources)").fetchall()]
@@ -1597,6 +1597,11 @@ def _kintone_args():
     """kintoneログイン情報（表示名・ログイン名）をPOST/GETから取り出し、リダイレクト先へ引き継ぐ。"""
     src = request.form if request.method == "POST" else request.args
     return {k: src.get(k, "").strip() for k in ("kintone_user", "kintone_code") if src.get(k, "").strip()}
+
+
+@app.context_processor
+def _inject_scaffold_reasons():
+    return {"scaffold_reasons": SCAFFOLD_REASONS}
 
 
 @app.context_processor
@@ -1693,6 +1698,10 @@ def new_report(category):
         assembler_qual_no = f.get("assembler_qual_no", "").strip()
         inspector_qual = f.get("inspector_qual", "").strip()
         inspector_qual_no = f.get("inspector_qual_no", "").strip()
+        inspect_reason = _scaffold_reason(f) if category == "scaffold" else ""
+        if category == "scaffold" and (not inspect_reason or inspect_reason == "その他"):
+            return ("<meta charset='utf-8'><p>点検実施理由を選択してください（「その他」の場合は内容も記入）。"
+                    "ブラウザの「戻る」で戻って入力してください。</p>", 400)
         notify_tl = f.get("notify_tl", "").strip()
         notify_gl = f.get("notify_gl", "").strip()
         notify_bl = f.get("notify_bl", "").strip()
@@ -1712,12 +1721,12 @@ def new_report(category):
                 INSERT INTO reports (category, subtype, project_name, project_no, inspect_datetime, inspector, status, created_at,
                                       site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
                                       assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
-                                      notify_tl, notify_gl, notify_bl, notify_safety, submitted_code)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                      notify_tl, notify_gl, notify_bl, notify_safety, submitted_code, inspect_reason)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (category, subtype, project_name, project_no, inspect_datetime, inspector, "未確認", created_at,
                   site_manager, report_month, report_period, report_round, meeting_date, meeting_attendees, meeting_notes, submitted_by,
                   assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
-                  notify_tl, notify_gl, notify_bl, notify_safety, submitted_code))
+                  notify_tl, notify_gl, notify_bl, notify_safety, submitted_code, inspect_reason))
             if USE_PG:
                 report_id = fetchone(db_execute(conn, "SELECT lastval() AS id"))["id"]
             else:
@@ -1831,12 +1840,15 @@ def edit_report(category, report_id):
                 UPDATE reports SET project_name=?, project_no=?, inspect_datetime=?, inspector=?,
                     site_manager=?, report_month=?, report_period=?, report_round=?,
                     meeting_date=?, meeting_attendees=?, meeting_notes=?,
-                    assembler_name=?, assembler_qual=?, assembler_qual_no=?, inspector_qual=?, inspector_qual_no=?
+                    assembler_name=?, assembler_qual=?, assembler_qual_no=?, inspector_qual=?, inspector_qual_no=?,
+                    inspect_reason=?
                 WHERE id=?
             """, (project_name, project_no, inspect_datetime, inspector,
                   site_manager, report_month, report_period, report_round,
                   meeting_date, meeting_attendees, meeting_notes,
-                  assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no, report_id))
+                  assembler_name, assembler_qual, assembler_qual_no, inspector_qual, inspector_qual_no,
+                  (_scaffold_reason(f) or report["inspect_reason"]) if category == "scaffold" else report["inspect_reason"],
+                  report_id))
 
             sync_items = []
             for i, item in enumerate(items):
@@ -1894,6 +1906,16 @@ def edit_report(category, report_id):
 
 # ── 点検報告：一覧 ───────────────────────────────────────────────
 PERIOD_ORDER = {"上旬": 0, "中旬": 1, "下旬": 2}
+# 足場点検の点検実施理由（「その他」は記述内容を「その他（…）」として保存）
+SCAFFOLD_REASONS = ["組立後", "一部解体", "変更後", "悪天候後", "地震後", "定期", "その他"]
+
+
+def _scaffold_reason(f):
+    reason = f.get("inspect_reason", "").strip()
+    if reason == "その他":
+        other = f.get("inspect_reason_other", "").strip()
+        return f"その他（{other}）" if other else "その他"
+    return reason if reason in SCAFFOLD_REASONS else ""
 
 
 @app.route("/safety_patrol/status")
@@ -2059,7 +2081,7 @@ def scaffold_status():
     conn = get_db()
     try:
         reports = fetchall(db_execute(conn,
-            "SELECT id, project_no, project_name, subtype, inspect_datetime FROM reports "
+            "SELECT id, project_no, project_name, subtype, inspect_datetime, inspect_reason FROM reports "
             "WHERE category='scaffold' AND inspect_datetime LIKE ? ORDER BY inspect_datetime", (f"{ym}-%",)))
         last_rows = fetchall(db_execute(conn,
             "SELECT project_no, MAX(inspect_datetime) AS last FROM reports WHERE category='scaffold' GROUP BY project_no"))
@@ -2077,6 +2099,8 @@ def scaffold_status():
         names.setdefault(no, r["project_name"] or "")
         day = int((r["inspect_datetime"] or "")[8:10] or 0)
         label = subtypes.get(r["subtype"], {}).get("label", "") if r["subtype"] else ""
+        if r["inspect_reason"]:
+            label = f"{label}（{r['inspect_reason']}）"
         by_day.setdefault(no, {}).setdefault(day, []).append({"id": r["id"], "label": label})
     days = list(range(1, last_day + 1))
     weekdays = {d: "月火水木金土日"[date(year, month, d).weekday()] for d in days}
@@ -2320,6 +2344,8 @@ def report_pdf(category, report_id):
     else:
         info_rows.append(["状態", Paragraph(status_label, base_style), "", ""])
     if category == "scaffold":
+        info_rows.append(["点検実施理由", Paragraph(report["inspect_reason"] or "", base_style), "", ""])
+
         def _qual(name, no):
             text = name or ""
             if no:

@@ -88,6 +88,38 @@
     {% endif %}
 
     {% if category == 'scaffold' %}
+    {% set cur_reason = (edit.inspect_reason if edit else '') or '' %}
+    {% set cur_main = 'その他' if cur_reason.startswith('その他') else cur_reason %}
+    {% set cur_other = cur_reason[4:-1] if cur_reason.startswith('その他（') else '' %}
+    <h2 style="margin-top:24px;"><span class="accent-bar"></span>点検実施理由</h2>
+    <div class="flex" style="align-items:flex-end;">
+      <div class="form-row" style="min-width:200px;">
+        <label>点検実施理由（必須）</label>
+        <select name="inspect_reason" id="inspect-reason" required>
+          <option value="" {% if not cur_main %}selected{% endif %} disabled hidden>選択してください</option>
+          {% for r in scaffold_reasons %}<option value="{{ r }}" {% if cur_main == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-row" id="inspect-reason-other-row" style="flex:1; min-width:220px; {% if cur_main != 'その他' %}display:none;{% endif %}">
+        <label>その他の内容（必須）</label>
+        <input type="text" name="inspect_reason_other" id="inspect-reason-other" value="{{ cur_other }}"
+               placeholder="例：外部足場のメッシュシート張替え後" {% if cur_main == 'その他' %}required{% endif %}>
+      </div>
+    </div>
+    <script>
+    (function () {
+      var sel = document.getElementById("inspect-reason");
+      var row = document.getElementById("inspect-reason-other-row");
+      var inp = document.getElementById("inspect-reason-other");
+      sel.addEventListener("change", function () {
+        var other = sel.value === "その他";
+        row.style.display = other ? "" : "none";
+        inp.required = other;
+        if (other) inp.focus();
+      });
+    })();
+    </script>
+
     <h2 style="margin-top:24px;"><span class="accent-bar"></span>組立者・点検者の資格情報</h2>
     <div class="flex">
       <div class="form-row" style="flex:1; min-width:160px;">
