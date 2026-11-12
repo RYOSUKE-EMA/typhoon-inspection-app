@@ -12,12 +12,12 @@
   var JUNPO_CONF = 5830, TENKEN_CONF = 5831, MASTER_APP = 269;
   var DEV_CODES = ['c0114101'];
   var CATS = {
-    safety_patrol: { label: '安全旬報', app: 5829, flow: [['TL']],
+    safety_patrol: { label: '安全旬報', flow: [['TL']],
       desc: '現場の安全・環境管理状況を定期的に点検します（建築・マンション工事用旬報対応）' },
-    scaffold: { label: '足場点検記録', app: 5834, flow: [],
+    scaffold: { label: '足場点検記録', flow: [],
       desc: '足場の組立・変更後や強風後等の点検を行います（労働安全衛生規則対応・足場種類別）' },
-    typhoon: { label: '台風養生点検', app: 5832, flow: [['TL']], desc: '台風接近時の養生状況を点検します' },
-    disaster: { label: '災害時現場点検', app: 5833, flow: [['TL'], ['GL', 'BL']],
+    typhoon: { label: '台風養生点検', flow: [['TL']], desc: '台風接近時の養生状況を点検します' },
+    disaster: { label: '災害時現場点検', flow: [['TL'], ['GL', 'BL']],
       desc: '地震・台風・異常気象時の現場点検を行います（災害時現場点検報告書・地震異常気象時報告書対応）' }
   };
   var SUBTYPES = ['わく組足場', '単管足場', 'ﾌﾞﾗｹｯﾄ一側足場', 'くさび緊結足場', '低層くさび緊結足場', '張出し足場',
@@ -29,6 +29,9 @@
   var ROLE_FIELD = { TL: 'approver_tl', GL: 'approver_gl', BL: 'approver_bl' };
 
   var root = null;
+  // データの保存先：この画面が置かれているアプリ（本番 5287／準備用 5835）。4種類の点検を点検種別（category）で区別する
+  var APP = (location.pathname.indexOf('/k/m/') === 0 ? kintone.mobile.app : kintone.app).getId();
+  function catQ(cat) { return 'category in ("' + CATS[cat].label + '")'; }
   var me = kintone.getLoginUser();
 
   // ───────── 共通 ─────────
@@ -160,7 +163,7 @@
       id: r.$id.value, cat: cat, project_no: (r.project_no && r.project_no.value) || r.koji_no.value || '',
       project_name: (r.project_name && r.project_name.value) || r.koji_name.value || '',
       inspect_date: r.inspect_date.value || '',
-      inspector: (r.inspector_name && r.inspector_name.value) || users(r.inspector.value),
+      inspector: r.inspector.value || '',
       status: r['ステータス'] ? r['ステータス'].value : '', assignees: r['作業者'] ? r['作業者'].value.map(function (u) { return u.code; }) : [],
       creator: r['作成者'] ? r['作成者'].value : {}, created_at: r['作成日時'] ? r['作成日時'].value : '',
       raw: r
@@ -173,7 +176,7 @@
     }
     ['approver_tl', 'approver_gl', 'approver_bl', 'safety_officer'].forEach(function (k) { if (r[k]) rep[k] = r[k].value; });
     rep.items = r.checklist ? r.checklist.value.map(function (row) {
-      return { item_name: row.value.item_name.value, result: row.value.result.value, note: row.value.note.value };
+      return { item_name: row.value.item_name.value, result: row.value.item_result.value, note: row.value.item_note.value };
     }) : [];
     rep.approvals = r.approvals ? r.approvals.value.map(function (row) {
       return { step: Number(row.value.ap_step.value || 0), role: row.value.ap_role.value, name: row.value.ap_name.value,
@@ -240,7 +243,7 @@
     page(html);
     keys.forEach(function (k) {
       if (!CATS[k].flow.length) return;
-      api('/k/v1/records', 'GET', { app: CATS[k].app, query: 'ステータス in ("TL承認待ち", "GL・BL承認待ち") limit 1', totalCount: true, fields: ['$id'] })
+      api('/k/v1/records', 'GET', { app: APP, query: catQ(k) + ' and ステータス in ("TL承認待ち", "GL・BL承認待ち") limit 1', totalCount: true, fields: ['$id'] })
         .then(function (r) {
           var n = Number(r.totalCount || 0);
           var b = root.querySelector('[data-cnt="' + k + '"]');
@@ -253,7 +256,7 @@
   function viewList(cat) {
     loading();
     var info = CATS[cat];
-    Promise.all([fetchAll(info.app, '', null), loadRoster()]).then(function (res) {
+    Promise.all([fetchAll(APP, catQ(cat), null), loadRoster()]).then(function (res) {
       var reports = res[0].map(function (r) { return toReport(cat, r); });
       var roster = res[1];
       var codes = {};
@@ -361,7 +364,7 @@
       return;
     }
     loading();
-    var getRec = id ? api('/k/v1/record', 'GET', { app: info.app, id: id }).then(function (r) { return toReport(cat, r.record); }) : Promise.resolve(null);
+    var getRec = id ? api('/k/v1/record', 'GET', { app: APP, id: id }).then(function (r) { return toReport(cat, r.record); }) : Promise.resolve(null);
     getRec.then(function (edit) {
       var subtype = edit ? edit.subtype : q.subtype;
       var lastQ = '作成者 in ("' + me.code + '") order by $id desc limit 1';
@@ -369,7 +372,7 @@
         Promise.resolve(edit),
         edit ? Promise.resolve(edit.items.map(function (x) { return x.item_name; })) : loadItems(cat, subtype),
         loadGuides(cat, cat === 'scaffold' ? subtype : ''),
-        edit ? Promise.resolve(null) : api('/k/v1/records', 'GET', { app: info.app, query: lastQ }).then(function (r) { return r.records[0] ? toReport(cat, r.records[0]) : null; }),
+        edit ? Promise.resolve(null) : api('/k/v1/records', 'GET', { app: APP, query: catQ(cat) + ' and ' + lastQ }).then(function (r) { return r.records[0] ? toReport(cat, r.records[0]) : null; }),
         loadRoster(), loadMyBlock(), Promise.resolve(subtype)
       ]);
     }).then(function (res) {
@@ -541,12 +544,12 @@
     var no = f('project_no');
     var rec = {
       project_no: { value: no }, project_name: { value: f('project_name') }, inspect_date: { value: f('inspect_date') },
-      inspector_name: { value: f('inspector') },
+      inspector: { value: f('inspector') },
       checklist: { value: checklist.map(function (item, i) {
-        return { value: { item_no: { value: i + 1 }, item_name: { value: item }, result: { value: f('result_' + i) }, note: { value: f('note_' + i) } } };
+        return { value: { item_no: { value: i + 1 }, item_name: { value: item }, item_result: { value: f('result_' + i) }, item_note: { value: f('note_' + i) } } };
       }) }
     };
-    if (!edit) rec.inspector = { value: [{ code: me.code }] };
+    if (!edit) rec.category = { value: info.label };
     if (cat === 'safety_patrol') {
       ['site_manager', 'report_month', 'report_period', 'report_round', 'meeting_attendees', 'meeting_notes'].forEach(function (k) { rec[k] = { value: f(k) }; });
       rec.meeting_date = { value: f('meeting_date') || null };
@@ -573,13 +576,13 @@
           return { value: v.value };
         }) };
       }
-      p = api('/k/v1/record', 'PUT', { app: info.app, id: edit.id, record: rec }).then(function () {
-        if (resub) return statusAction(info.app, edit.id, '再提出する（差し戻し後）', firstCode(edit.approver_tl));
+      p = api('/k/v1/record', 'PUT', { app: APP, id: edit.id, record: rec }).then(function () {
+        if (resub) return statusAction(APP, edit.id, '再提出する（差し戻し後）', firstCode(edit.approver_tl));
       }).then(function () { return edit.id; });
     } else {
-      p = api('/k/v1/record', 'POST', { app: info.app, record: rec }).then(function (r) {
-        if (!info.flow.length) return r.id;
-        return statusAction(info.app, r.id, '提出する', f('notify_tl')).then(function () { return r.id; });
+      p = api('/k/v1/record', 'POST', { app: APP, record: rec }).then(function (r) {
+        if (!info.flow.length) return statusAction(APP, r.id, '記録する', null).then(function () { return r.id; });
+        return statusAction(APP, r.id, '提出する', f('notify_tl')).then(function () { return r.id; });
       });
     }
     return p.then(function (rid) { go('#/reports/' + cat + '/' + rid); });
@@ -631,7 +634,7 @@
   function viewDetail(cat, id) {
     loading();
     var info = CATS[cat];
-    Promise.all([api('/k/v1/record', 'GET', { app: info.app, id: id }), loadGuides(cat, null)]).then(function (res) {
+    Promise.all([api('/k/v1/record', 'GET', { app: APP, id: id }), loadGuides(cat, null)]).then(function (res) {
       var rep = toReport(cat, res[0].record);
       return loadGuides(cat, cat === 'scaffold' ? rep.subtype : '').then(function (g) { renderDetail(cat, rep, g); });
     }).catch(fail);
@@ -753,7 +756,7 @@
     root.querySelector('#btn-del').addEventListener('click', function () {
       if (!confirm('この報告書を削除しますか？この操作は取り消せません。')) return;
       overlay('削除中...');
-      api('/k/v1/records', 'DELETE', { app: info.app, ids: [rep.id] }).then(function () { go('#/reports/' + cat); }).catch(fail);
+      api('/k/v1/records', 'DELETE', { app: APP, ids: [rep.id] }).then(function () { go('#/reports/' + cat); }).catch(fail);
     });
   }
 
@@ -764,8 +767,8 @@
     rows.push({ value: { ap_step: { value: step }, ap_role: { value: role }, ap_name: { value: me.name }, ap_code: { value: me.code },
                          ap_comment: { value: comment }, ap_at: { value: nowIso() } } });
     var action = step === 1 ? '承認する（GL・BL）' : (cat === 'disaster' ? '承認する（TL）' : '承認する');
-    return api('/k/v1/record', 'PUT', { app: info.app, id: rep.id, record: { approvals: { value: rows } } })
-      .then(function () { return statusAction(info.app, rep.id, action, null); })
+    return api('/k/v1/record', 'PUT', { app: APP, id: rep.id, record: { approvals: { value: rows } } })
+      .then(function () { return statusAction(APP, rep.id, action, null); })
       .then(function () { route(); });
   }
 
@@ -773,7 +776,7 @@
   function viewReturn(cat, id, q) {
     loading();
     var info = CATS[cat], role = q.role || 'TL';
-    api('/k/v1/record', 'GET', { app: info.app, id: id }).then(function (r) {
+    api('/k/v1/record', 'GET', { app: APP, id: id }).then(function (r) {
       var rep = toReport(cat, r.record);
       if (currentStep(info, rep) === null || !canApprove(rep, role)) { go('#/reports/' + cat + '/' + id); return; }
       var tr = function (k, v) { return '<tr><th style="width:140px;">' + k + '</th><td>' + v + '</td></tr>'; };
@@ -792,8 +795,8 @@
         var rets = rep.raw.returns.value.map(function (x) { return { value: x.value }; });
         rets.push({ value: { rt_role: { value: role }, rt_by: { value: me.name }, rt_reason: { value: reason }, rt_at: { value: nowIso() }, rt_resub_at: { value: null } } });
         var action = currentStep(info, rep) === 1 ? '差し戻す（GL・BL）' : '差し戻す';
-        api('/k/v1/record', 'PUT', { app: info.app, id: id, record: { returns: { value: rets }, approvals: { value: [] }, return_reason: { value: reason } } })
-          .then(function () { return statusAction(info.app, id, action, rep.creator.code); })
+        api('/k/v1/record', 'PUT', { app: APP, id: id, record: { returns: { value: rets }, approvals: { value: [] }, return_reason: { value: reason } } })
+          .then(function () { return statusAction(APP, id, action, rep.creator.code); })
           .then(function () { go('#/reports/' + cat + '/' + id); }).catch(fail);
       });
     }).catch(fail);
@@ -835,7 +838,7 @@
     loadStatusConf().then(function (conf) {
       var extras = conf.filter(function (r) { return r.kind.value === '追加対象'; }).map(function (r) { return r.koji_no.value.trim(); });
       return Promise.all([loadTargets(extras),
-        fetchAll(CATS.safety_patrol.app, 'report_month in ("' + m + '") and inspect_date >= "' + y + '-01-01" and inspect_date <= "' + y + '-12-31"',
+        fetchAll(APP, catQ('safety_patrol') + ' and report_month = ' + m + ' and inspect_date >= "' + y + '-01-01" and inspect_date <= "' + y + '-12-31"',
           ['project_no', 'project_name', 'report_period', 'ステータス']), conf]);
     }).then(function (res) {
       var projects = res[0], recs = res[1], conf = res[2];
@@ -962,9 +965,9 @@
     loadStatusConf().then(function (conf) {
       var extras = conf.filter(function (r) { return r.kind.value === '追加対象'; }).map(function (r) { return r.koji_no.value.trim(); });
       return Promise.all([loadTargets(extras),
-        fetchAll(CATS.scaffold.app, 'inspect_date >= "' + ym + '-01" and inspect_date <= "' + ym + '-' + pad(last) + '"',
+        fetchAll(APP, catQ('scaffold') + ' and inspect_date >= "' + ym + '-01" and inspect_date <= "' + ym + '-' + pad(last) + '"',
           ['project_no', 'project_name', 'subtype', 'inspect_reason', 'inspect_reason_other', 'inspect_date']),
-        api('/k/v1/records', 'GET', { app: CATS.scaffold.app, query: 'order by inspect_date desc limit 500', fields: ['project_no', 'inspect_date'] }),
+        api('/k/v1/records', 'GET', { app: APP, query: catQ('scaffold') + ' order by inspect_date desc limit 500', fields: ['project_no', 'inspect_date'] }),
         conf]);
     }).then(function (res) {
       var projects = res[0], recs = res[1], lastRecs = res[2].records, conf = res[3];
@@ -1417,7 +1420,7 @@
   }
   function junpoBulk(no) {
     overlay('PDF作成中...');
-    return fetchAll(CATS.safety_patrol.app, 'project_no = "' + no + '"', null).then(function (recs) {
+    return fetchAll(APP, catQ('safety_patrol') + ' and project_no = "' + no + '"', null).then(function (recs) {
       var reps = recs.map(function (r) { return toReport('safety_patrol', r); });
       reps.sort(function (a, b) {
         var ka = [a.inspect_date.slice(0, 4), Number(a.report_month || 0), PERIODS.indexOf(a.report_period), Number(a.id)];
