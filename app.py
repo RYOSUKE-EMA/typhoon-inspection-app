@@ -1639,25 +1639,6 @@ def _unlocked_categories(kintone_user):
     return unlocked
 
 
-# 2026-11 kintone版へ移行：トップと新規作成は kintone の各アプリへ転送（旧記録の閲覧は引き続き可）
-KINTONE_APPS = {"safety_patrol": 5829, "typhoon": 5832, "disaster": 5833, "scaffold": 5834}
-
-
-@app.before_request
-def _moved_to_kintone():
-    m = re.fullmatch(r"/reports/([a-z_]+)/new", request.path)
-    if m and m.group(1) in KINTONE_APPS:
-        return redirect(f"https://{KINTONE_SUBDOMAIN}.cybozu.com/k/{KINTONE_APPS[m.group(1)]}/edit")
-    if request.path == "/":
-        links = "".join(
-            f'<li><a href="https://{KINTONE_SUBDOMAIN}.cybozu.com/k/{app_id}/" target="_top">{INSPECTION_TYPES[k]["label"]}</a></li>'
-            for k, app_id in KINTONE_APPS.items())
-        return ("<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                "<div style=\"font-family:'Noto Sans JP',sans-serif;max-width:560px;margin:40px auto;padding:0 16px;line-height:1.8\">"
-                "<h2>点検アプリはkintoneに移りました</h2><p>下のリンクから各アプリを開いてください。</p>"
-                f"<ul>{links}</ul></div>")
-
-
 @app.route("/")
 def index():
     conn = get_db()
