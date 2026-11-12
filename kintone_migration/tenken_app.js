@@ -906,7 +906,7 @@
         '<span style="font-size:1.25rem; font-weight:700;">' + y + '年' + m + '月</span><a class="btn btn-secondary btn-sm" href="#/safety_patrol/status?year=' + t.next[0] + '&month=' + t.next[1] + '">翌月 →</a>' +
         '<span style="margin-left:auto;" class="footer-note">今月の対象 ' + rows.filter(function (r) { return !r.allOut; }).length + ' 現場（一覧 ' + rows.length + ' 現場）</span></div>' +
         '<div class="table-wrap"><table class="list-table"><thead><tr><th class="col-no">工事ナンバー</th><th>工事名</th><th style="width:190px;">対象期間</th>' +
-        PERIODS.map(function (p) { return '<th style="width:130px; text-align:center;">' + p + '<br><span style="font-weight:400; font-size:0.75rem;">〜' + m + '/' + deadlines[p] + '</span></th>'; }).join('') +
+        PERIODS.map(function (p) { return '<th style="width:150px; text-align:center;">' + p + '<br><span style="font-weight:400; font-size:0.75rem;">〜' + m + '/' + deadlines[p] + '</span></th>'; }).join('') +
         '</tr></thead><tbody>';
       rows.forEach(function (r) {
         h += '<tr class="' + (r.allOut ? 'row-out' : '') + '"><td>' + r.no + '<br><button type="button" class="excl-btn" data-act="bulk" data-no="' + r.no + '">一括PDF</button></td>' +
@@ -1618,7 +1618,7 @@
     '#tk-guide .g-title{font-size:1rem;font-weight:700;line-height:1.5;flex:1}#tk-guide .g-close{border:none;background:none;font-size:1.5rem;line-height:1;color:var(--ink-soft);cursor:pointer;padding:0 4px}',
     '#tk-guide .g-body{padding:20px 22px}#tk-guide .g-image{width:100%;border:1px solid var(--line);border-radius:4px;margin-bottom:16px;display:block}',
     '#tk-guide .g-desc{font-size:.92rem;line-height:1.75;white-space:pre-wrap;color:var(--ink)}#tk-guide .g-empty{color:var(--ink-soft);font-size:.9rem}',
-    '.tk-root .status-cell{text-align:center;vertical-align:middle}.tk-root .badge-overdue{background:#fdeceb;color:#b3382c;border-color:#e8a39b;font-weight:700}',
+    '.tk-root .status-cell{text-align:center;vertical-align:middle;white-space:nowrap}.tk-root .status-cell .badge{white-space:nowrap}.tk-root .badge-overdue{background:#fdeceb;color:#b3382c;border-color:#e8a39b;font-weight:700}',
     '.tk-root .excl-form{margin-top:4px}.tk-root .excl-btn{background:none;border:none;color:#7a858c;font-size:.75rem;cursor:pointer;text-decoration:underline;padding:0;font-family:inherit}.tk-root .excl-btn:hover{color:#2f3b42}',
     '.tk-root .period-out{color:#b0b8bd;font-size:.8rem}.tk-root tr.row-out td{background:#fafbfb;color:#8a949a}',
     '.tk-root .period-cell{white-space:nowrap;font-size:.82rem}.tk-root .period-cell .custom{color:#1f6fb2;font-weight:700}',
