@@ -60,9 +60,9 @@
             <td>{{ info.subtypes[r.subtype].label if r.subtype and r.subtype in info.subtypes else "" }}</td>
             {% endif %}
             <td>{{ r.inspector }}</td>
-            <td>{{ r.inspect_datetime[:10] }}</td>
+            <td style="white-space:nowrap;">{{ r.inspect_datetime[:10] }}</td>
             {% if info.approval_flow %}
-            <td>
+            <td style="white-space:nowrap;">
               {% if r.status == '確認済' %}
               <span class="badge badge-done">確認済</span>
               {% elif r.status == '差し戻し' %}
@@ -72,7 +72,7 @@
               {% endif %}
             </td>
             {% endif %}
-            <td><a class="btn btn-primary btn-sm" href="{{ url_for('report_detail', category=category, report_id=r.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">詳細</a></td>
+            <td style="white-space:nowrap;"><a class="btn btn-primary btn-sm" href="{{ url_for('report_detail', category=category, report_id=r.id) }}{% if pq %}?{{ pq|urlencode }}{% endif %}">詳細</a></td>
           </tr>
           {% endfor %}
         </tbody>
